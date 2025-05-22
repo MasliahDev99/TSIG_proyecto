@@ -55,3 +55,20 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
 
 - [Desafío ANII - Gestión de paradas de transporte público](https://anii.org.uy/apoyos/innovacion/407/desafio-gestion-de-paradas-de-transporte-publico-en-rutas-nacionales/)
 
+
+## Instalación del Proyecto
+
+1. Abre una terminal y navega a la carpeta del cliente:
+   ```bash
+   cd Client
+   ```
+2. Instala las dependencias del proyecto
+   ```bash
+   npm install
+   ```
+3. Inicia el entorno de desarrollo:
+   ```bash
+   npm run dev
+   ```
+   
+
