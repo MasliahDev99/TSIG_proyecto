@@ -53,7 +53,7 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
   
 
 
-## Paso a paso para integrar GeoServer
+## Paso a paso 
 
 ### Cómo cambiar la ruta de conexión de GeoServer (GEOSERVER_URL)?
 
@@ -86,11 +86,29 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
 - `src/adapters/gsAdapter.js` (donde se usa el servicio)
 - `src/components/mapview/MapView.jsx` (donde se usa el adaptador)
 
+---
 
-### Enlaces útiles
+### Cómo cambiar el sistema de referencia espacial (`srsName`)
 
-- [Desafío ANII - Gestión de paradas de transporte público](https://anii.org.uy/apoyos/innovacion/407/desafio-gestion-de-paradas-de-transporte-publico-en-rutas-nacionales/)
+La función `fetchGeoServerFeatures` permite definir el sistema de referencia espacial (SRS) que utiliza tu GeoServer. Por defecto se usa `EPSG:4326`, pero si tu servidor utiliza otro (por ejemplo, `EPSG:3857`), puedes cambiarlo de dos maneras:
 
-
+1. **Al llamar la función desde el adaptador:**
+   ```js
+   fetchGeoServerFeatures({
+     typeName: 'montevideo:paradas',
+     srsName: 'EPSG:3857' // Cambia este valor según tu configuración
+   })
+   ```
+2. O modificando el valor por defecto en la función:
+   ```js
+       export async function fetchGeoServerFeatures({
+      typeName,
+      bbox,
+      srsName = 'EPSG:4326' // Cambia este valor si tu GeoServer usa otro SRS
+      }) {
+      // ...
+      }
+   ```
+Importante: Revisar de que el srsName coincida con el sistema de referencia configurado en tu GeoServer y en las capas que vas a consumir.
 
 
