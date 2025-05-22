@@ -58,15 +58,20 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
 
 ## Instalación del Proyecto
 
-1. Abre una terminal y navega a la carpeta del cliente:
+1. Clona el repositorio del proyecto
+   ```bash
+    git clone https://github.com/MasliahDev99/TSIG_proyecto.git
+   ```
+
+3. Abre una terminal y navega a la carpeta del cliente:
    ```bash
    cd Client
    ```
-2. Instala las dependencias del proyecto
+4. Instala las dependencias del proyecto
    ```bash
    npm install
    ```
-3. Inicia el entorno de desarrollo:
+5. Inicia el entorno de desarrollo:
    ```bash
    npm run dev
    ```
