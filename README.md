@@ -55,6 +55,14 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
 
 - [Desafío ANII - Gestión de paradas de transporte público](https://anii.org.uy/apoyos/innovacion/407/desafio-gestion-de-paradas-de-transporte-publico-en-rutas-nacionales/)
 
+### Diseño 
+
+![Mapa de ejemplo](./TSIG_PROYECTO_map.png)
+![panel login admin](./tsig_proyecto_admin.png)
+
+
+
+
 
 ## Instalación del Proyecto
 
