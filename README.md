@@ -52,8 +52,8 @@ Este proyecto busca optimizar la gestión de paradas en Rutas Nacionales mediant
    - Usuario administrador: credenciales provistas por el equipo.
   
 
----
-## Paso a paso 
+
+## Paso a paso para integrar GeoServer
 
 ### Cómo cambiar la ruta de conexión de GeoServer (GEOSERVER_URL)?
 
