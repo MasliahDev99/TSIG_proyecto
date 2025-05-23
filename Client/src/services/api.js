@@ -5,6 +5,8 @@ import axios from "axios";
 
 const apiUrl = 'https://localhost:8081/api'; // luego estara dentro de un .env
 
+
+
 /**
  *  Configuracion de axios para la API
  *  @type {import('axios').AxiosInstance}

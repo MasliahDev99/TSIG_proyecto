@@ -3,7 +3,7 @@
  * Componente MapView
  * 
  * Descripción: 
- * Este componente muestra un mapa interactivo utilizando la librería OpenLayers.
+ * Este componente muestra un mapa interactivo utilizando la librería OpenLayers y GeoServer.
  * Permite visualizar paradas y líneas de ómnibus simuladas, así como la ubicación actual del usuario.
  * 
  * Características principales:
@@ -37,6 +37,7 @@ import { Geolocation } from "ol"
 import SearchFilters from "../searchFilters/SearchFilters"
 import StopDetails from "../details/StopDetails"
 import LineDetails from "../details/LineDetails"
+import { gsAdapter } from "@/adapters"
 
 const MapView = () => {
   const [stops, setStops] = useState([])
@@ -52,324 +53,241 @@ const MapView = () => {
     company: "",
     showDisabled: false,
   })
+  
   const mapRef = useRef(null)
   const mapContainerRef = useRef(null)
   const popupContainerRef = useRef(null)
-  const popupContentRef = useRef(null)
   const popupCloserRef = useRef(null)
-  const popupOverlayRef = useRef(null)
 
-  // Simulación de datos para demostración
+  // Carga de datos desde GeoServer
   useEffect(() => {
-    // Aquí se cargarían los datos reales desde una API
-    const mockStops = [
-      { id: 1, name: "Terminal Montevideo", lat: -34.907, lng: -56.199, enabled: true, hasRefuge: true, lines: [1, 2] },
-      { id: 2, name: "Parada Ruta 5 km 30", lat: -34.8, lng: -56.25, enabled: true, hasRefuge: false, lines: [1] },
-      { id: 3, name: "Terminal Maldonado", lat: -34.909, lng: -54.96, enabled: true, hasRefuge: true, lines: [2] },
-    ]
+    const loadData = async () => {
+      try {
+        // Cargamos las paradas y líneas desde GeoServer y los procesamos con gsAdapter usando Promise.all para cargarlas de manera simultánea
+        const [geoStops, geoLines] = await Promise.all([
+          gsAdapter.getStopFromGeoServer(),
+          gsAdapter.getLineFromGeoServer()
+        ])
+        
+        // Procesamos los datos para que sean compatibles con la app
+        const processedStops = geoStops.features.map(f => ({
+          id: f.properties.id,
+          name: f.properties.nombre,
+          lat: f.geometry.coordinates[1],
+          lng: f.geometry.coordinates[0],
+          enabled: f.properties.activa,
+          hasRefuge: f.properties.refugio,
+          lines: f.properties.lineas.split(',').map(Number)
+        }))
 
-    const mockLines = [
-      {
-        id: 1,
-        description: "Montevideo - Canelones",
-        company: "COPSA",
-        origin: "Montevideo",
-        destination: "Canelones",
-        enabled: true,
-        route: [
-          [-56.199, -34.907],
-          [-56.22, -34.85],
-          [-56.25, -34.8],
-        ],
-      },
-      {
-        id: 2,
-        description: "Montevideo - Maldonado",
-        company: "COPSA",
-        origin: "Montevideo",
-        destination: "Maldonado",
-        enabled: true,
-        route: [
-          [-56.199, -34.907],
-          [-55.5, -34.908],
-          [-54.96, -34.909],
-        ],
-      },
-    ]
-
-    setStops(mockStops)
-    setLines(mockLines)
+        // Procesamos las líneas para que sean compatibles con la app
+        const processedLines = geoLines.features.map(f => ({
+          id: f.properties.id,
+          description: f.properties.descripcion,
+          company: f.properties.empresa,
+          origin: f.properties.origen,
+          destination: f.properties.destino,
+          enabled: f.properties.activa,
+          route: f.geometry.coordinates
+        }))
+        
+        setStops(processedStops)
+        setLines(processedLines)
+      } catch (error) {
+        console.error("Error al cargar los datos - useEffect linea100 MapView:", error)
+      }
+    }
+    
+    loadData()
   }, [])
 
-  // Inicializar el mapa
+  // Inicialización del mapa
   useEffect(() => {
+    // Si no hay mapa y el contenedor del mapa existe, creamos el mapa
     if (!mapRef.current && mapContainerRef.current) {
-      // Crear popup overlay
-      const popupOverlay = new Overlay({
-        element: popupContainerRef.current,
-        autoPan: true,
-        autoPanAnimation: {
-          duration: 250,
-        },
-      })
-
-      // Configurar el cierre del popup
-      if (popupCloserRef.current) {
-        popupCloserRef.current.onclick = () => {
-          popupOverlay.setPosition(undefined)
-          return false
-        }
-      }
-
-      // Crear fuentes de datos vectoriales
-      const stopsSource = new VectorSource()
-      const linesSource = new VectorSource()
-
-      // Crear capas vectoriales
-      const stopsLayer = new VectorLayer({
-        source: stopsSource,
-        style: (feature) => {
-          const enabled = feature.get("enabled")
-          return new Style({
-            image: new Circle({
-              radius: 6,
-              fill: new Fill({
-                color: enabled ? "rgba(0, 128, 0, 0.8)" : "rgba(255, 0, 0, 0.8)",
-              }),
-              stroke: new Stroke({
-                color: "#fff",
-                width: 2,
-              }),
-            }),
-          })
-        },
-      })
-
-      const linesLayer = new VectorLayer({
-        source: linesSource,
-        style: (feature) => {
-          const enabled = feature.get("enabled")
-          return new Style({
-            stroke: new Stroke({
-              color: enabled ? "#3B82F6" : "#EF4444",
-              width: 3,
-            }),
-          })
-        },
-      })
-
-      // Crear mapa
       const map = new Map({
         target: mapContainerRef.current,
         layers: [
-          new TileLayer({
-            source: new OSM(),
-          }),
-          linesLayer,
-          stopsLayer,
+          new TileLayer({ source: new OSM() }) // Capa base de OpenStreetMap
         ],
         view: new View({
-          center: fromLonLat([-56.199, -34.907]), // Montevideo
-          zoom: 13,
-        }),
-        overlays: [popupOverlay],
+          center: fromLonLat([-56.199, -34.907]), // Centro en Montevideo
+          zoom: 13
+        })
       })
-
-      // Configurar geolocalización
-      const geolocation = new Geolocation({
-        trackingOptions: {
-          enableHighAccuracy: true,
-        },
-        projection: map.getView().getProjection(),
-      })
-
-      geolocation.setTracking(true)
-
-      // Crear un punto para la ubicación actual
-      const positionFeature = new Feature()
-      positionFeature.setStyle(
-        new Style({
-          image: new Circle({
+      
+      // Configuración de capas
+      const stopsSource = new VectorSource()  // Creamos una fuente de datos para las paradas de tipo VectorSource
+      const linesSource = new VectorSource() // Creamos una fuente de datos para las líneas de tipo VectorSource
+      
+      const stopsLayer = new VectorLayer({ // Creamos una capa de tipo VectorLayer para las paradas
+        source: stopsSource,  // Asignamos la fuente de datos a la capa
+        style: feature => new Style({
+          // Dibujamos la parada como un círculo de radio 6 y lo rellenamos con color verde si está activa y rojo si está desactivada
+          image: new Circle({ 
             radius: 6,
             fill: new Fill({
-              color: "#3399CC",
+              color: feature.get('enabled') ? '#10B981' : '#EF4444'
             }),
-            stroke: new Stroke({
-              color: "#fff",
-              width: 2,
-            }),
-          }),
-        }),
-      )
-
-      // Añadir el punto a una capa
-      const positionLayer = new VectorLayer({
-        source: new VectorSource({
-          features: [positionFeature],
-        }),
+            // Dibujamos un borde blanco de radio 2
+            stroke: new Stroke({ color: '#fff', width: 2 })
+          })
+        })
       })
-      map.addLayer(positionLayer)
-
-      // Actualizar la posición cuando cambie
-      geolocation.on("change:position", () => {
-        const coordinates = geolocation.getPosition()
-        positionFeature.setGeometry(coordinates ? new Point(coordinates) : null)
-        map.getView().setCenter(coordinates)
+      
+      const linesLayer = new VectorLayer({ // Creamos una capa de tipo VectorLayer para las líneas
+        source: linesSource, // Asignamos la fuente de datos de la capa
+        // Dibujamos la línea como una línea de color azul si está activa y rojo si está desactivada
+        style: feature => new Style({
+          stroke: new Stroke({
+            color: feature.get('enabled') ? '#3B82F6' : '#EF4444',
+            width: 3
+          })
+        })
       })
+      
+      // Agregamos las capas al mapa en orden de adentro a fuera para que se dibujen en el orden correcto y se vea bien.
+      map.addLayer(linesLayer)
+      map.addLayer(stopsLayer)
+      
+      // Geolocalización (comentado por ahora)
+      /*
+      // Habilitamos la geolocalización con alta precisión
+      const geolocation = new Geolocation({
+        trackingOptions: { enableHighAccuracy: true },
+        projection: map.getView().getProjection()
+      })
+      
+      geolocation.setTracking(true) // Activamos la geolocalización
+      // Creamos una feature para la posición del usuario
+      const positionFeature = new Feature()
+      // Dibujamos el usuario como un círculo de radio 6 y lo rellenamos de color azul (puede ser de otro color)
+      positionFeature.setStyle(new Style({
+        image: new Circle({
+          radius: 6,
+          fill: new Fill({ color: '#3399CC' }),
+          stroke: new Stroke({ color: '#fff', width: 2 })
+        })
+      }))
+      
+      // Agregamos la capa de posición del usuario al mapa
+      map.addLayer(new VectorLayer({
+        source: new VectorSource({ features: [positionFeature] })
+      }))
+      
+      geolocation.on('change:position', () => {
+        const coords = geolocation.getPosition()
+        positionFeature.setGeometry(coords ? new Point(coords) : null)
+      })
+      */
 
-      // Manejar clics en el mapa
-      map.on("click", (evt) => {
-        const feature = map.forEachFeatureAtPixel(evt.pixel, (feature) => feature)
-
+      // Manejo de interacciones
+      const popupOverlay = new Overlay({
+        element: popupContainerRef.current,
+        autoPan: true
+      })
+      
+      map.addOverlay(popupOverlay)
+      
+      map.on('click', evt => {
+        const feature = map.forEachFeatureAtPixel(evt.pixel, f => f)
         if (feature) {
-          const featureType = feature.get("type")
-          const featureId = feature.get("id")
-
-          if (featureType === "stop") {
-            const stop = stops.find((s) => s.id === featureId)
-            if (stop) {
-              setSelectedStop(stop)
-              setSelectedLine(null)
-            }
-          } else if (featureType === "line") {
-            const line = lines.find((l) => l.id === featureId)
-            if (line) {
-              setSelectedLine(line)
-              setSelectedStop(null)
-            }
+          const type = feature.get('type')
+          const id = feature.get('id')
+          
+          if (type === 'stop') {
+            const stop = stops.find(s => s.id === id)
+            setSelectedStop(stop)
+            popupOverlay.setPosition(evt.coordinate)
+          } else if (type === 'line') {
+            const line = lines.find(l => l.id === id)
+            setSelectedLine(line)
+            popupOverlay.setPosition(evt.coordinate)
           }
-
-          // Mostrar popup
-          const coordinates = evt.coordinate
-          popupContentRef.current.innerHTML = feature.get("popupContent")
-          popupOverlay.setPosition(coordinates)
-        } else {
-          popupOverlay.setPosition(undefined)
         }
       })
-
+      
       mapRef.current = map
-      popupOverlayRef.current = popupOverlay
     }
+    
+    return () => mapRef.current?.dispose()
+  }, [stops, lines])
 
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.setTarget(null)
-        mapRef.current = null
-      }
-    }
-  }, [])
-
-  // Actualizar marcadores y líneas cuando cambian los datos o filtros
+  // Actualización de features
   useEffect(() => {
-    if (!mapRef.current) return
-
-    // Obtener las capas vectoriales
-    const stopsLayer = mapRef.current.getLayers().getArray()[1]
-    const linesLayer = mapRef.current.getLayers().getArray()[2]
-    const stopsSource = stopsLayer.getSource()
-    const linesSource = linesLayer.getSource()
-
-    // Limpiar fuentes
-    stopsSource.clear()
-    linesSource.clear()
-
-    // Filtrar líneas y paradas según los filtros aplicados
-    const filteredLines = lines.filter((line) => {
-      if (!filters.showDisabled && !line.enabled) return false
-      if (filters.origin && !line.origin.toLowerCase().includes(filters.origin.toLowerCase())) return false
-      if (filters.destination && !line.destination.toLowerCase().includes(filters.destination.toLowerCase()))
-        return false
-      if (filters.company && !line.company.toLowerCase().includes(filters.company.toLowerCase())) return false
-      return true
-    })
-
-    const filteredStops = stops.filter((stop) => {
-      if (!filters.showDisabled && !stop.enabled) return false
-      // Filtrar paradas que pertenecen a líneas filtradas
-      if (filteredLines.length > 0) {
-        return stop.lines.some((lineId) => filteredLines.some((line) => line.id === lineId))
+    if (mapRef.current) {
+      // Buscamos la fuente de datos de paradas
+      const stopsSource = mapRef.current.getLayers().getArray()
+        .find(l => 
+          typeof l.getSource === "function" &&
+          l.getSource() &&
+          typeof l.getSource().getFeatures === "function" &&
+          l.getSource().getFeatures().some(f => f.get('type') === 'stop')
+        )?.getSource()
+      
+      // Buscamos la fuente de datos de líneas
+      const linesSource = mapRef.current.getLayers().getArray()
+        .find(l => 
+          typeof l.getSource === "function" &&
+          l.getSource() &&
+          typeof l.getSource().getFeatures === "function" &&
+          l.getSource().getFeatures().some(f => f.get('type') === 'line')
+        )?.getSource()
+      
+      // Actualizamos las features de paradas
+      if (stopsSource) {
+        stopsSource.clear()
+        stops.forEach(stop => {
+          const feature = new Feature({
+            geometry: new Point(fromLonLat([stop.lng, stop.lat])),
+            type: 'stop',
+            id: stop.id,
+            enabled: stop.enabled
+          })
+          stopsSource.addFeature(feature)
+        })
       }
-      return true
-    })
-
-    // Añadir paradas al mapa
-    filteredStops.forEach((stop) => {
-      const feature = new Feature({
-        geometry: new Point(fromLonLat([stop.lng, stop.lat])),
-        id: stop.id,
-        name: stop.name,
-        enabled: stop.enabled,
-        hasRefuge: stop.hasRefuge,
-        type: "stop",
-        popupContent: `
-          <div>
-            <h3 class="font-bold">${stop.name}</h3>
-            <p>Estado: ${stop.enabled ? "Habilitada" : "Deshabilitada"}</p>
-            <p>Refugio: ${stop.hasRefuge ? "Sí" : "No"}</p>
-          </div>
-        `,
-      })
-
-      stopsSource.addFeature(feature)
-    })
-
-    // Añadir líneas al mapa
-    filteredLines.forEach((line) => {
-      // Convertir coordenadas a formato OpenLayers
-      const coordinates = line.route.map((coord) => fromLonLat(coord))
-
-      const feature = new Feature({
-        geometry: new LineString(coordinates),
-        id: line.id,
-        description: line.description,
-        company: line.company,
-        origin: line.origin,
-        destination: line.destination,
-        enabled: line.enabled,
-        type: "line",
-        popupContent: `
-          <div>
-            <h3 class="font-bold">${line.description}</h3>
-            <p>Empresa: ${line.company}</p>
-            <p>Origen: ${line.origin}</p>
-            <p>Destino: ${line.destination}</p>
-          </div>
-        `,
-      })
-
-      linesSource.addFeature(feature)
-    })
-  }, [stops, lines, filters])
-
-  const handleFilterChange = (newFilters) => {
-    setFilters({ ...filters, ...newFilters })
-  }
-
-  const closeDetails = () => {
-    setSelectedStop(null)
-    setSelectedLine(null)
-  }
+      
+      // Actualizamos las features de líneas
+      if (linesSource) {
+        linesSource.clear()
+        lines.forEach(line => {
+          const feature = new Feature({
+            geometry: new LineString(line.route.map(coord => fromLonLat(coord))),
+            type: 'line',
+            id: line.id,
+            enabled: line.enabled
+          })
+          linesSource.addFeature(feature)
+        })
+      }
+    }
+  }, [stops, lines])
 
   return (
-    <div className="flex min-h-screen ">
-      {/* Panel lateral de filtros */}
-      <div className="w-80 bg-white p-4 shadow-md overflow-y-auto">
-        <SearchFilters filters={filters} onFilterChange={handleFilterChange} />
-
-        {selectedStop && <StopDetails stop={selectedStop} onClose={closeDetails} />}
-
-        {selectedLine && <LineDetails line={selectedLine} onClose={closeDetails} />}
+    <div className="min-h-screen flex">
+      <div className="w-96 p-4 bg-white border-r">
+        <SearchFilters filters={filters} onFilterChange={setFilters} />
       </div>
-
-      {/* Mapa principal */}
-      <div className="flex-1 relative">
-        <div ref={mapContainerRef} className="absolute inset-0"></div>
-
-        {/* Popup para el mapa */}
-        <div ref={popupContainerRef} className="ol-popup hidden">
-          <a href="#" ref={popupCloserRef} className="ol-popup-closer"></a>
-          <div ref={popupContentRef}></div>
+      
+      <div ref={mapContainerRef} className="flex-1 relative">
+        <div ref={popupContainerRef} className="ol-popup">
+          <button
+            ref={popupCloserRef}
+            className="ol-popup-closer"
+            onClick={() => {
+              setSelectedStop(null)
+              setSelectedLine(null)
+            }}
+          />
+          
+          {selectedStop && (
+            <StopDetails stop={selectedStop} onClose={() => setSelectedStop(null)} />
+          )}
+          
+          {selectedLine && (
+            <LineDetails line={selectedLine} onClose={() => setSelectedLine(null)} />
+          )}
         </div>
       </div>
     </div>
