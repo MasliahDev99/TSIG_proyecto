@@ -1,49 +1,46 @@
 
 /**
- * Componente MapView
+ * @file MapView.jsx
+ * @module components/mapview/MapView
+ * @description Componente principal para la visualización del mapa interactivo.
  * 
- * Descripción: 
- * Este componente muestra un mapa interactivo utilizando la librería OpenLayers y GeoServer.
- * Permite visualizar paradas y líneas de ómnibus simuladas, así como la ubicación actual del usuario.
+ * Este componente integra varios hooks personalizados para gestionar diferentes aspectos del mapa:
+ * - `useMapInitialization`: Se encarga de crear y configurar la instancia base del mapa de OpenLayers,
+ *   incluyendo la vista inicial, la capa base de OpenStreetMap y un overlay para popups.
+ * - `useMapData`: Obtiene los datos de paradas y líneas de ómnibus desde el backend (a través de un adaptador),
+ *   maneja los estados de carga y error, y transforma los datos para su uso en el mapa.
+ * - `useVectorLayer`: Gestiona la creación y actualización de capas vectoriales en el mapa.
+ *   Se utiliza dos veces: una para la capa de paradas y otra para la capa de líneas.
  * 
- * Características principales:
- * - Muestra un mapa centrado en Montevideo.
- * - Dibuja paradas y líneas de ejemplo sobre el mapa.
- * - Muestra la ubicación actual del usuario si está disponible.
- * - Permite hacer clic sobre una parada o línea para ver información en un popup.
- * 
- * Uso:
- * <MapView />
- * 
- * No recibe props.
- * 
+ * Al utilizar estos hooks, `MapView` se vuelve más declarativo y su lógica principal se simplifica,
+ * delegando las responsabilidades específicas a cada hook. Esto mejora la legibilidad,
+ * el mantenimiento y la testeabilidad del código.
  */
 
-import { useState, useEffect, useRef } from "react"
-import "ol/ol.css"
-import Map from "ol/Map"
-import View from "ol/View"
-import TileLayer from "ol/layer/Tile"
-import VectorLayer from "ol/layer/Vector"
-import VectorSource from "ol/source/Vector"
-import OSM from "ol/source/OSM"
-import { fromLonLat } from "ol/proj"
-import Feature from "ol/Feature"
-import Point from "ol/geom/Point"
-import LineString from "ol/geom/LineString"
-import { Style, Circle, Fill, Stroke } from "ol/style"
-import Overlay from "ol/Overlay"
-import { Geolocation } from "ol"
-import SearchFilters from "../searchFilters/SearchFilters"
-import StopDetails from "../details/StopDetails"
-import LineDetails from "../details/LineDetails"
-import { gsAdapter } from "@/adapters"
+import { useState, useRef, useEffect } // Agregamos useEffect aquí si es necesario para interacciones directas con el mapa
+  from "react";
+import "ol/ol.css"; // Estilos base de OpenLayers
+import { Style, Circle, Fill, Stroke } from "ol/style"; // Para definir estilos de las features
+// Ya no necesitamos importar Map, View, TileLayer, OSM, VectorLayer, VectorSource, fromLonLat, Overlay directamente aquí
+// porque useMapInitialization y useVectorLayer los manejan internamente.
+
+import SearchFilters from "../searchFilters/SearchFilters";
+import StopDetails from "../details/StopDetails";
+import LineDetails from "../details/LineDetails";
+import { gsAdapter } from "@/adapters"; // Adaptador para la obtención de datos
+import { useMapData, useMapInitialization, useVectorLayer } from "@/hooks"; // Nuestros hooks personalizados
+
+// Constantes para los IDs de los elementos del DOM para el mapa y el popup.
+// Es una buena práctica definirlos como constantes para evitar errores de tipeo.
+const MAP_TARGET_ID = "map-container";
+const POPUP_TARGET_ID = "popup-container";
 
 const MapView = () => {
-  const [stops, setStops] = useState([])
-  const [lines, setLines] = useState([])
-  const [selectedStop, setSelectedStop] = useState(null)
-  const [selectedLine, setSelectedLine] = useState(null)
+  // Estado para la selección de elementos en el mapa (paradas o líneas)
+  const [selectedStop, setSelectedStop] = useState(null);
+  const [selectedLine, setSelectedLine] = useState(null);
+
+  // Estado para los filtros de búsqueda (aún gestionado localmente o podría ser otro hook)
   const [filters, setFilters] = useState({
     origin: "",
     destination: "",
@@ -52,246 +49,207 @@ const MapView = () => {
     route: "",
     company: "",
     showDisabled: false,
-  })
-  
-  const mapRef = useRef(null)
-  const mapContainerRef = useRef(null)
-  const popupContainerRef = useRef(null)
-  const popupCloserRef = useRef(null)
+  });
 
-  // Carga de datos desde GeoServer
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Cargamos las paradas y líneas desde GeoServer y los procesamos con gsAdapter usando Promise.all para cargarlas de manera simultánea
-        const [geoStops, geoLines] = await Promise.all([
-          gsAdapter.getStopFromGeoServer(),
-          gsAdapter.getLineFromGeoServer()
-        ])
-        
-        // Procesamos los datos para que sean compatibles con la app
-        const processedStops = geoStops.features.map(f => ({
-          id: f.properties.id,
-          name: f.properties.nombre,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-          enabled: f.properties.activa,
-          hasRefuge: f.properties.refugio,
-          lines: f.properties.lineas.split(',').map(Number)
-        }))
-
-        // Procesamos las líneas para que sean compatibles con la app
-        const processedLines = geoLines.features.map(f => ({
-          id: f.properties.id,
-          description: f.properties.descripcion,
-          company: f.properties.empresa,
-          origin: f.properties.origen,
-          destination: f.properties.destino,
-          enabled: f.properties.activa,
-          route: f.geometry.coordinates
-        }))
-        
-        setStops(processedStops)
-        setLines(processedLines)
-      } catch (error) {
-        console.error("Error al cargar los datos - useEffect linea100 MapView:", error)
-      }
+  /**
+   * Hook `useMapInitialization`:
+   * Inicializa el mapa base de OpenLayers.
+   * - `mapTargetId`: ID del div donde se renderizará el mapa.
+   * - `popupTargetId`: ID del div que contendrá los popups.
+   * - `initialViewOptions`: Configuración inicial de la vista del mapa (centro y zoom).
+   * Retorna:
+   *  - `getMap`: Función para obtener la instancia del mapa de OpenLayers.
+   *  - `popupOverlayRef`: Referencia al overlay del popup para posicionarlo.
+   *  - `isMapInitialized`: Booleano que indica si el mapa ya fue inicializado.
+   */
+  const { getMap, popupOverlayRef, isMapInitialized } = useMapInitialization(
+    MAP_TARGET_ID,
+    POPUP_TARGET_ID,
+    {
+      center: [-56.199, -34.907], // Centro inicial en Montevideo
+      zoom: 13, // Nivel de zoom inicial
     }
-    
-    loadData()
-  }, [])
+  );
 
-  // Inicialización del mapa
+  /**
+   * Hook `useMapData`:
+   * Obtiene y procesa los datos de paradas y líneas.
+   * - `gsAdapter`: El adaptador que se comunica con GeoServer.
+   * Retorna:
+   *  - `stops`: Array de datos de paradas procesadas.
+   *  - `lines`: Array de datos de líneas procesadas.
+   *  - `isLoading`: Booleano que indica si los datos están cargando.
+   *  - `error`: Objeto de error si la carga falló.
+   */
+  const { stops, lines, isLoading, error } = useMapData(gsAdapter);
+
+  /**
+   * Función de estilo para las paradas.
+   * Esta función se pasa al hook `useVectorLayer` para estilizar cada parada.
+   * @param {import('ol/Feature').default} feature - La feature (parada) a estilizar.
+   * @returns {Style} El estilo de OpenLayers para la parada.
+   */
+  const stopStyleFunction = (feature) =>
+    new Style({
+      image: new Circle({
+        radius: 7,
+        fill: new Fill({
+          color: feature.get("enabled") ? "#10B981" : "#EF4444", // Verde si está activa, rojo si no
+        }),
+        stroke: new Stroke({ color: "#FFFFFF", width: 2 }), // Borde blanco
+      }),
+    });
+
+  /**
+   * Función de estilo para las líneas.
+   * Esta función se pasa al hook `useVectorLayer` para estilizar cada línea.
+   * @param {import('ol/Feature').default} feature - La feature (línea) a estilizar.
+   * @returns {Style} El estilo de OpenLayers para la línea.
+   */
+  const lineStyleFunction = (feature) =>
+    new Style({
+      stroke: new Stroke({
+        color: feature.get("enabled") ? "#3B82F6" : "#EF4444", // Azul si está activa, rojo si no
+        width: 4,
+      }),
+    });
+
+  /**
+   * Hook `useVectorLayer` para las paradas:
+   * Gestiona la capa vectorial de paradas en el mapa.
+   * - `getMap()`: La instancia del mapa obtenida de `useMapInitialization`.
+   * - `stops`: Los datos de las paradas obtenidos de `useMapData`.
+   * - `options`: Configuración de la capa, incluyendo la función de estilo y el nombre.
+   */
+  useVectorLayer(isMapInitialized ? getMap() : null, stops, {
+    styleFunction: stopStyleFunction,
+    layerName: "stops-layer",
+    zIndex: 10 // Asegura que las paradas estén sobre las líneas
+  });
+
+  /**
+   * Hook `useVectorLayer` para las líneas:
+   * Gestiona la capa vectorial de líneas en el mapa.
+   * - `getMap()`: La instancia del mapa.
+   * - `lines`: Los datos de las líneas.
+   * - `options`: Configuración de la capa.
+   */
+  useVectorLayer(isMapInitialized ? getMap() : null, lines, {
+    styleFunction: lineStyleFunction,
+    layerName: "lines-layer",
+    zIndex: 5 // Las líneas debajo de las paradas
+  });
+
+  // Referencia para el botón de cerrar el popup.
+  const popupCloserRef = useRef(null);
+
+  // Efecto para manejar los clics en el mapa y mostrar popups.
+  // Este efecto se ejecuta cuando el mapa está inicializado.
   useEffect(() => {
-    // Si no hay mapa y el contenedor del mapa existe, creamos el mapa
-    if (!mapRef.current && mapContainerRef.current) {
-      const map = new Map({
-        target: mapContainerRef.current,
-        layers: [
-          new TileLayer({ source: new OSM() }) // Capa base de OpenStreetMap
-        ],
-        view: new View({
-          center: fromLonLat([-56.199, -34.907]), // Centro en Montevideo
-          zoom: 13
-        })
-      })
-      
-      // Configuración de capas
-      const stopsSource = new VectorSource()  // Creamos una fuente de datos para las paradas de tipo VectorSource
-      const linesSource = new VectorSource() // Creamos una fuente de datos para las líneas de tipo VectorSource
-      
-      const stopsLayer = new VectorLayer({ // Creamos una capa de tipo VectorLayer para las paradas
-        source: stopsSource,  // Asignamos la fuente de datos a la capa
-        style: feature => new Style({
-          // Dibujamos la parada como un círculo de radio 6 y lo rellenamos con color verde si está activa y rojo si está desactivada
-          image: new Circle({ 
-            radius: 6,
-            fill: new Fill({
-              color: feature.get('enabled') ? '#10B981' : '#EF4444'
-            }),
-            // Dibujamos un borde blanco de radio 2
-            stroke: new Stroke({ color: '#fff', width: 2 })
-          })
-        })
-      })
-      
-      const linesLayer = new VectorLayer({ // Creamos una capa de tipo VectorLayer para las líneas
-        source: linesSource, // Asignamos la fuente de datos de la capa
-        // Dibujamos la línea como una línea de color azul si está activa y rojo si está desactivada
-        style: feature => new Style({
-          stroke: new Stroke({
-            color: feature.get('enabled') ? '#3B82F6' : '#EF4444',
-            width: 3
-          })
-        })
-      })
-      
-      // Agregamos las capas al mapa en orden de adentro a fuera para que se dibujen en el orden correcto y se vea bien.
-      map.addLayer(linesLayer)
-      map.addLayer(stopsLayer)
-      
-      // Geolocalización (comentado por ahora)
-      /*
-      // Habilitamos la geolocalización con alta precisión
-      const geolocation = new Geolocation({
-        trackingOptions: { enableHighAccuracy: true },
-        projection: map.getView().getProjection()
-      })
-      
-      geolocation.setTracking(true) // Activamos la geolocalización
-      // Creamos una feature para la posición del usuario
-      const positionFeature = new Feature()
-      // Dibujamos el usuario como un círculo de radio 6 y lo rellenamos de color azul (puede ser de otro color)
-      positionFeature.setStyle(new Style({
-        image: new Circle({
-          radius: 6,
-          fill: new Fill({ color: '#3399CC' }),
-          stroke: new Stroke({ color: '#fff', width: 2 })
-        })
-      }))
-      
-      // Agregamos la capa de posición del usuario al mapa
-      map.addLayer(new VectorLayer({
-        source: new VectorSource({ features: [positionFeature] })
-      }))
-      
-      geolocation.on('change:position', () => {
-        const coords = geolocation.getPosition()
-        positionFeature.setGeometry(coords ? new Point(coords) : null)
-      })
-      */
+    if (!isMapInitialized) return;
 
-      // Manejo de interacciones
-      const popupOverlay = new Overlay({
-        element: popupContainerRef.current,
-        autoPan: true
-      })
-      
-      map.addOverlay(popupOverlay)
-      
-      map.on('click', evt => {
-        const feature = map.forEachFeatureAtPixel(evt.pixel, f => f)
-        if (feature) {
-          const type = feature.get('type')
-          const id = feature.get('id')
-          
-          if (type === 'stop') {
-            const stop = stops.find(s => s.id === id)
-            setSelectedStop(stop)
-            popupOverlay.setPosition(evt.coordinate)
-          } else if (type === 'line') {
-            const line = lines.find(l => l.id === id)
-            setSelectedLine(line)
-            popupOverlay.setPosition(evt.coordinate)
-          }
+    const mapInstance = getMap();
+    if (!mapInstance || !popupOverlayRef.current) return;
+
+    const clickHandler = (evt) => {
+      // Intenta obtener una feature (elemento geográfico) en el pixel donde se hizo clic.
+      const feature = mapInstance.forEachFeatureAtPixel(evt.pixel, (f) => f);
+      const overlay = popupOverlayRef.current;
+
+      if (feature) {
+        const featureType = feature.get("type"); // 'stop' o 'line', según lo definido en useVectorLayer
+        const featureId = feature.get("id");
+
+        if (featureType === "stop") {
+          const stopData = stops.find((s) => s.id === featureId);
+          setSelectedStop(stopData);
+          setSelectedLine(null); // Asegura que solo un tipo de detalle se muestre
+          overlay.setPosition(evt.coordinate); // Posiciona el popup en la coordenada del clic
+        } else if (featureType === "line") {
+          const lineData = lines.find((l) => l.id === featureId);
+          setSelectedLine(lineData);
+          setSelectedStop(null); // Asegura que solo un tipo de detalle se muestre
+          overlay.setPosition(evt.coordinate);
+        } else {
+          // Si se hace clic en algo que no es ni parada ni línea, o en el espacio vacío,
+          // se cierra el popup.
+          overlay.setPosition(undefined);
+          setSelectedStop(null);
+          setSelectedLine(null);
         }
-      })
-      
-      mapRef.current = map
-    }
-    
-    return () => mapRef.current?.dispose()
-  }, [stops, lines])
+      } else {
+        // Si no se hace clic en ninguna feature, se cierra el popup.
+        overlay.setPosition(undefined);
+        setSelectedStop(null);
+        setSelectedLine(null);
+      }
+    };
 
-  // Actualización de features
-  useEffect(() => {
-    if (mapRef.current) {
-      // Buscamos la fuente de datos de paradas
-      const stopsSource = mapRef.current.getLayers().getArray()
-        .find(l => 
-          typeof l.getSource === "function" &&
-          l.getSource() &&
-          typeof l.getSource().getFeatures === "function" &&
-          l.getSource().getFeatures().some(f => f.get('type') === 'stop')
-        )?.getSource()
-      
-      // Buscamos la fuente de datos de líneas
-      const linesSource = mapRef.current.getLayers().getArray()
-        .find(l => 
-          typeof l.getSource === "function" &&
-          l.getSource() &&
-          typeof l.getSource().getFeatures === "function" &&
-          l.getSource().getFeatures().some(f => f.get('type') === 'line')
-        )?.getSource()
-      
-      // Actualizamos las features de paradas
-      if (stopsSource) {
-        stopsSource.clear()
-        stops.forEach(stop => {
-          const feature = new Feature({
-            geometry: new Point(fromLonLat([stop.lng, stop.lat])),
-            type: 'stop',
-            id: stop.id,
-            enabled: stop.enabled
-          })
-          stopsSource.addFeature(feature)
-        })
-      }
-      
-      // Actualizamos las features de líneas
-      if (linesSource) {
-        linesSource.clear()
-        lines.forEach(line => {
-          const feature = new Feature({
-            geometry: new LineString(line.route.map(coord => fromLonLat(coord))),
-            type: 'line',
-            id: line.id,
-            enabled: line.enabled
-          })
-          linesSource.addFeature(feature)
-        })
-      }
+    mapInstance.on("click", clickHandler);
+
+    // Limpieza: remover el listener de clic cuando el componente se desmonta o las dependencias cambian.
+    return () => {
+      mapInstance.un("click", clickHandler);
+    };
+  }, [isMapInitialized, getMap, popupOverlayRef, stops, lines]); // Dependencias del efecto
+
+  // Manejador para cerrar el popup desde su botón.
+  const handleClosePopup = () => {
+    if (popupOverlayRef.current) {
+      popupOverlayRef.current.setPosition(undefined); // Oculta el popup
     }
-  }, [stops, lines])
+    setSelectedStop(null); // Limpia la parada seleccionada
+    setSelectedLine(null); // Limpia la línea seleccionada
+  };
+
+  // Renderizado del componente
+  if (isLoading) {
+    return <p className="text-center mt-10">Cargando datos del mapa...</p>;
+  }
+
+  if (error) {
+    return (
+      <p className="text-center mt-10 text-red-500">
+        [MapView.jsx] Error al cargar datos desde el servidor: {error.message}
+        (Verifica la conexión con GeoServer y la consola para más detalles)
+      </p>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex">
-      <div className="w-96 p-4 bg-white border-r">
+    <div className="min-h-screen flex flex-col md:flex-row">
+      {/* Panel lateral para filtros de búsqueda */}
+      <div className="w-full md:w-96 p-4 bg-white border-r overflow-y-auto">
         <SearchFilters filters={filters} onFilterChange={setFilters} />
       </div>
-      
-      <div ref={mapContainerRef} className="flex-1 relative">
-        <div ref={popupContainerRef} className="ol-popup">
+
+      {/* Contenedor principal del mapa y el popup */}
+      <div className="flex-1 relative">
+        {/* El div donde se renderizará el mapa de OpenLayers */}
+        <div id={MAP_TARGET_ID} className="w-full h-[calc(100vh-var(--navbar-height,64px))] md:h-full" />
+        
+        {/* El div que actuará como contenedor para el popup de OpenLayers */}
+        {/* Su visibilidad y contenido son controlados por OpenLayers y el estado de selectedStop/selectedLine */}
+        <div id={POPUP_TARGET_ID} className="ol-popup bg-white p-3 rounded shadow-lg">
           <button
-            ref={popupCloserRef}
-            className="ol-popup-closer"
-            onClick={() => {
-              setSelectedStop(null)
-              setSelectedLine(null)
-            }}
-          />
-          
-          {selectedStop && (
-            <StopDetails stop={selectedStop} onClose={() => setSelectedStop(null)} />
-          )}
-          
-          {selectedLine && (
-            <LineDetails line={selectedLine} onClose={() => setSelectedLine(null)} />
-          )}
+            ref={popupCloserRef} // Referencia para el botón de cierre
+            className="ol-popup-closer absolute top-1 right-1 text-lg font-bold" // Estilos para el botón de cierre
+            onClick={handleClosePopup} // Llama a la función para cerrar el popup
+          >
+            &times; {/* Símbolo de 'x' para cerrar */}
+          </button>
+          <div id="popup-content">
+            {selectedStop && (
+              <StopDetails stop={selectedStop} onClose={handleClosePopup} />
+            )}
+            {selectedLine && (
+              <LineDetails line={selectedLine} onClose={handleClosePopup} />
+            )}
+          </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default MapView
+export default MapView;
