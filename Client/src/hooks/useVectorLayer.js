@@ -2,124 +2,132 @@ import { useEffect, useRef } from 'react';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { Feature } from 'ol';
-import { Point, LineString } from 'ol/geom'; // u otras geometrías según sea necesario
+import { Point, LineString } from 'ol/geom';
 import { fromLonLat } from 'ol/proj';
-
-
-/**
- * @typedef {Object} FeatureData
- * @property {string|number} id - Identificador único para la feature (elemento geográfico).
- * @property {number[]} coordinates - Coordenadas para la feature (ej., [lon, lat] para Point, [[lon, lat], ...] para LineString).
- * @property {string} type - Tipo de feature (ej., 'stop', 'line') para determinar la geometría y el estilo.
- * @property {Object} properties - Otras propiedades de la feature.
- */
-
-/**
- * @typedef {Object} VectorLayerOptions
- * @property {string} [layerName] - Un nombre para la capa (opcional).
- * @property {Function} [styleFunction] - Una función que devuelve un Style de OpenLayers o un array de Styles para una feature.
- *                                       // (feature: Feature) => Style | Style[]
- * @property {number} [zIndex] - El índice z para la capa (controla el orden de apilamiento visual).
- */
 
 /**
  * Hook personalizado para gestionar una VectorLayer de OpenLayers.
- *
- * Este hook encapsula la creación, actualización y eliminación de una capa vectorial
- * en una instancia de mapa de OpenLayers. Reacciona a los cambios en los datos proporcionados
- * para actualizar las features (elementos geográficos) en la capa.
- *
- * @param {import('ol/Map').default|null} mapInstance - La instancia del mapa de OpenLayers a la que se agregará la capa.
- * @param {FeatureData[]} data - Un array de objetos de datos que se representarán como features en la capa.
- * @param {VectorLayerOptions} [options={}] - Configuración opcional para la capa vectorial.
- * @returns {VectorLayer|null} La instancia de VectorLayer de OpenLayers creada, o null si aún no se ha creado.
- *
- * @example
- * const MiComponenteDeMapa = () => {
- *   const map = useMapInitialization(); // Suponiendo un hook que proporciona la instancia del mapa
- *   const { stops } = useMapData();      // Suponiendo un hook que obtiene datos de paradas
- *
- *   const funcionEstiloParada = (feature) => new Style({
- *     image: new Circle({
- *       radius: 6,
- *       fill: new Fill({ color: feature.get('enabled') ? 'green' : 'red' }),
- *       stroke: new Stroke({ color: 'white', width: 2 }),
- *     }),
- *   });
- *
- *   const capaParadas = useVectorLayer(map, stops, { styleFunction: funcionEstiloParada, layerName: 'Capa de Paradas' });
- *
- *   return <div id="map" style={{ width: '100%', height: '400px' }}></div>;
- * };
+ * Versión corregida que maneja mejor los datos transformados.
  */
 export const useVectorLayer = (mapInstance, data, options = {}) => {
-  const layerRef = useRef(null); // Referencia a la capa vectorial
-  const sourceRef = useRef(null); // Referencia a la fuente de datos de la capa
+  const layerRef = useRef(null);
+  const sourceRef = useRef(null);
 
   const { styleFunction, layerName, zIndex } = options;
 
   // Inicializar la capa
   useEffect(() => {
-    if (mapInstance && !layerRef.current) {
+    if (!mapInstance || layerRef.current) {
+      return;
+    }
+
+    console.log(`🔧 Inicializando capa vectorial: ${layerName}`);
+
+    try {
       sourceRef.current = new VectorSource();
       const vectorLayer = new VectorLayer({
         source: sourceRef.current,
-        style: styleFunction, // Aplicar la función de estilo proporcionada
-        zIndex: zIndex,       // Establecer el z-index
+        style: styleFunction,
+        zIndex: zIndex,
       });
+
       if (layerName) {
-        vectorLayer.set('name', layerName); // Establecer un nombre para la capa si se proporciona
+        vectorLayer.set('name', layerName);
       }
-      mapInstance.addLayer(vectorLayer); // Añadir la capa al mapa
+
+      mapInstance.addLayer(vectorLayer);
       layerRef.current = vectorLayer;
 
-      // Limpieza: eliminar la capa cuando el componente se desmonta o mapInstance cambia
-      return () => {
-        if (mapInstance && layerRef.current) {
-          mapInstance.removeLayer(layerRef.current);
-          layerRef.current = null;
-          sourceRef.current = null;
-        }
-      };
+      console.log(`✅ Capa ${layerName} inicializada correctamente`);
+    } catch (error) {
+      console.error(`❌ Error inicializando capa ${layerName}:`, error);
     }
-  }, [mapInstance, styleFunction, layerName, zIndex]); // Dependencias del efecto
+
+    // Limpieza
+    return () => {
+      if (mapInstance && layerRef.current) {
+        console.log(`🧹 Limpiando capa: ${layerName}`);
+        mapInstance.removeLayer(layerRef.current);
+        layerRef.current = null;
+        sourceRef.current = null;
+      }
+    };
+  }, [mapInstance, styleFunction, layerName, zIndex]);
 
   // Actualizar features cuando los datos cambian
   useEffect(() => {
-    if (sourceRef.current && data) {
-      sourceRef.current.clear(); // Limpiar features existentes
-      
-      const features = data.map(item => {
-        let geometry;
-        // Asumiendo que 'coordinates' es [lon, lat] para puntos
-        // y [[lon, lat], [lon, lat], ...] para cadenas de líneas (linestrings)
-        // Esta parte necesita adaptarse según la estructura real de tus datos
-        if (item.type === 'point' || item.type === 'stop') { // Tipos de ejemplo
-          geometry = new Point(fromLonLat(item.coordinates));
-        } else if (item.type === 'linestring' || item.type === 'line') {
-          geometry = new LineString(item.coordinates.map(coord => fromLonLat(coord)));
-        }
-        // Añadir otros tipos de geometría según sea necesario
-
-        if (geometry) {
-          // Crear una nueva feature con su geometría y propiedades
-          const feature = new Feature({ 
-            geometry, 
-            ...item.properties, // Expandir propiedades adicionales
-            id: item.id,        // Asignar ID
-            type: item.type     // Asignar tipo
-          });
-          return feature;
-        }
-        return null;
-      }).filter(Boolean); // Filtrar nulos si alguna geometría no se pudo crear
-      
-      if (features.length > 0) {
-        sourceRef.current.addFeatures(features); // Añadir las nuevas features a la fuente de datos
-      }
+    if (!sourceRef.current) {
+      console.log(`⏳ Fuente no disponible para ${layerName}, esperando...`);
+      return;
     }
-  }, [data, styleFunction]); // Dependencias del efecto (re-ejecutar si los datos o la función de estilo cambian)
 
-  return layerRef.current; // Devolver la instancia de la capa
+    if (!data || !Array.isArray(data)) {
+      console.log(`📊 No hay datos para ${layerName}:`, data);
+      return;
+    }
+
+    console.log(`📊 Actualizando features con datos: ${data.length} elementos`);
+
+    // Limpiar features existentes
+    sourceRef.current.clear();
+    
+    const features = data.map((item, index) => {
+      try {
+        let geometry;
+        
+        // Determinar el tipo de geometría basado en el tipo de dato
+        if (item.type === 'stop' || item.type === 'point') {
+          // Para paradas: crear Point
+          if (item.coordinates && Array.isArray(item.coordinates) && item.coordinates.length >= 2) {
+            geometry = new Point(fromLonLat([item.coordinates[0], item.coordinates[1]]));
+          } else if (item.lng !== undefined && item.lat !== undefined) {
+            geometry = new Point(fromLonLat([item.lng, item.lat]));
+          }
+        } else if (item.type === 'line' || item.type === 'linestring') {
+          // Para líneas: crear LineString
+          if (item.coordinates && Array.isArray(item.coordinates)) {
+            // Verificar si es un array de coordenadas
+            if (item.coordinates.length > 0 && Array.isArray(item.coordinates[0])) {
+              const transformedCoords = item.coordinates.map(coord => 
+                Array.isArray(coord) && coord.length >= 2 ? fromLonLat([coord[0], coord[1]]) : coord
+              );
+              geometry = new LineString(transformedCoords);
+            }
+          }
+        }
+
+        if (!geometry) {
+          console.warn(`⚠️ No se pudo crear geometría para el elemento ${index}:`, item);
+          return null;
+        }
+
+        // Crear la feature con todas las propiedades
+        const feature = new Feature({
+          geometry,
+          id: item.id,
+          type: item.type,
+          name: item.name || item.description,
+          enabled: item.enabled,
+          ...item.properties // Incluir propiedades adicionales
+        });
+
+        return feature;
+      } catch (error) {
+        console.error(`❌ Error creando feature ${index}:`, error, item);
+        return null;
+      }
+    }).filter(Boolean); // Filtrar features válidas
+
+    console.log(`✅ Features válidas creadas: ${features.length}`);
+
+    if (features.length > 0) {
+      sourceRef.current.addFeatures(features);
+      console.log(`🎯 ${features.length} features añadidas a la capa ${layerName}`);
+    } else {
+      console.warn(`⚠️ No se pudieron crear features para la capa ${layerName}`);
+    }
+
+  }, [data, layerName]);
+
+  return layerRef.current;
 };
-
