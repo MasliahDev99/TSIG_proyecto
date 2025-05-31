@@ -1,4 +1,3 @@
-
 import { useState } from "react"
 import useAuthStore from "@/store/authStore"
 
@@ -52,7 +51,7 @@ const AdminLogin = ({ navigateTo }) => {
                 type="email"
                 required
                 value={formData.email}
-                onChange={(e) => setFormData(e.target.value)}
+                onChange={(e) => setFormData({...formData, email: e.target.value})} // ❌ Esto estaba mal
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-gray-500 focus:border-gray-500 focus:z-10 sm:text-sm mb-2"
                 placeholder="Usuario"
               />
@@ -67,7 +66,7 @@ const AdminLogin = ({ navigateTo }) => {
                 type="password"
                 required
                 value={formData.contraseña}
-                onChange={(e) => setFormData(e.target.value)}
+                onChange={(e) => setFormData({...formData, contraseña: e.target.value})} // ❌ Esto estaba mal
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-gray-500 focus:border-gray-500 focus:z-10 sm:text-sm"
                 placeholder="Contraseña"
               />

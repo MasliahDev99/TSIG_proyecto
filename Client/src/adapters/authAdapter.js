@@ -5,15 +5,6 @@ import {login, logout} from '@/services'
  * @namespace authAdapter
  */
 
-
-
-/**
- * Objeto adaptador para servicios de autenticación.
- * @type {Object}
- * @property {Function} login - Funcion para iniciar sesion.
- * @property {Function} logout - Funcion para cerrar sesion.
- */
-
 /**
  * Adaptador para servicios de autenticación de usuarios admin.
  * 
@@ -28,7 +19,6 @@ import {login, logout} from '@/services'
  * 
  * import { authAdapter } from "@/adapters";
  * 
- * 
  * // Login
  * await authAdapter.login({ email, contraseña });
  * 
@@ -39,7 +29,7 @@ export const authAdapter = {
     login: async (userData) => {
         try{
             const response = await login(userData)
-            return response.data
+            return response // ❌ Era response.data pero login() ya retorna response.data
         }catch(error){
             console.error('Error en la autenticacion:', error);
             throw error;
@@ -48,7 +38,7 @@ export const authAdapter = {
     logout: async () => {
         try{
             const response = await logout()
-            return response.data
+            return response // ❌ Era response.data pero logout() ya retorna response.data
         }catch(error){
             console.error('Error en la autenticacion:', error);
             throw error;

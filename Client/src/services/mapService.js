@@ -1,25 +1,21 @@
 import API from './api'
 
-
-export function fetchStops() {
+export async function fetchStops() {
     try {
-        const response = API.get('map/stops')
+        const response = await API.get('map/stops') // ❌ Faltaba await
         return response.data
-
-    }catch(e){
-        console.log("Error en el fetchStops")
+    } catch(e) {
+        console.log("Error en el fetchStops:", e)
         throw e;
     }
 }
 
-
-export function fetchLines() {
+export async function fetchLines() {
     try {
-        const response = API.get('map/Lines')
+        const response = await API.get('map/lines') // ❌ Faltaba await y era 'Lines' (mayúscula)
         return response.data
-
-    }catch(e){
-        console.log("Error en el fetchLine")
+    } catch(e) {
+        console.log("Error en el fetchLines:", e)
         throw e;
     }
 }
