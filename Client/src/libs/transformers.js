@@ -98,18 +98,12 @@ export const transformStopsData = (geoStops) => {
  * //   { id: "L101", description: "Línea 101", company: "CUTCSA", origin: "Centro", destination: "Pocitos", enabled: true, route: [[-56.16, -34.90], [-56.15, -34.91]] }
  * // ]
  */
-export const transformLinesData = (geoLines) => {
-    // Verificación de seguridad.
-    if (!geoLines || !geoLines.features) return [];
-
-    // Mapea cada 'feature' (línea) a un nuevo objeto.
-    return geoLines.features.map(f => ({
-      id: f.properties.id,                      // ID de la línea.
-      description: f.properties.descripcion,    // Descripción o nombre de la línea.
-      company: f.properties.empresa,            // Empresa operadora.
-      origin: f.properties.origen,              // Punto de origen de la línea.
-      destination: f.properties.destino,        // Punto de destino de la línea.
-      enabled: f.properties.activa,             // Estado de activación.
-      route: f.geometry.coordinates,            // Coordenadas que forman la ruta de la línea.
+export function transformLinesData(features) {
+  return features
+    .filter((f) => f.geometry && f.geometry.coordinates)
+    .map((feature) => ({
+      id: feature.id || feature.properties.idLinea,
+      geometry: feature.geometry,
+      properties: feature.properties,
     }));
-  };
+}

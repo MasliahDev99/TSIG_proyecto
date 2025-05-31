@@ -226,7 +226,7 @@ const MapView = () => {
       {/* Contenedor principal del mapa y el popup */}
       <div className="flex-1 relative">
         {/* El div donde se renderizará el mapa de OpenLayers */}
-        <div id={MAP_TARGET_ID} className="w-full h-[calc(100vh-var(--navbar-height,64px))] md:h-full" />
+        <div id={MAP_TARGET_ID} className="w-full h-screen" />
         
         {/* El div que actuará como contenedor para el popup de OpenLayers */}
         {/* Su visibilidad y contenido son controlados por OpenLayers y el estado de selectedStop/selectedLine */}

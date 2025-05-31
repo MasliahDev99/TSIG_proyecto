@@ -48,9 +48,10 @@ export const gsAdapter = {
      */
     getStopsFromGeoServer : async ({ signal }) => {
         try{
-            const typeName = "montevideo:paradas" // Nombre de la capa de paradas en GeoServer
+            const typeName = "tsig2025:v_sig_vias" // Nombre de la capa de paradas en GeoServer
             // Llama a la función del servicio, pasándole el nombre de la capa y la señal de cancelación.
             const data = await fetchGeoServerFeatures({typeName, signal})
+            console.log(data)
             return data // Devuelve los datos obtenidos.
         }catch(error){
             // Si hay un error (incluyendo si la petición fue abortada), lo muestra en consola y lo vuelve a lanzar
@@ -77,9 +78,10 @@ export const gsAdapter = {
      */
     getLinesFromGeoServer: async ({ signal }) => {
         try{
-            const typeName = "montevideo:linea" // Nombre de la capa de líneas en GeoServer
+            const typeName = "tsig2025:limites_departamentales_igm_20220211" // Nombre de la capa de líneas en GeoServer
             // Llama a la función del servicio, pasándole el nombre de la capa y la señal de cancelación.
             const data = await fetchGeoServerFeatures({typeName, signal})
+            console.log(data)
             return data // Devuelve los datos obtenidos.
         }catch(error){
             // Manejo de errores similar al de getStopFromGeoServer.
