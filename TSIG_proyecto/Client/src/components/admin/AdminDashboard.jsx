@@ -1,5 +1,5 @@
 
-import {MapView} from "@/components"
+import { MapView} from "@/components"
 import { useState, useEffect } from "react"
 import { PlusCircleIcon, EditIcon, MessageSquareTextIcon, CheckCircleIcon, RouteIcon } from "lucide-react"
 
@@ -72,36 +72,51 @@ export default function AdminDashboard() {
   const [isFinalizingLine, setIsFinalizingLine] = useState(false)
 
   useEffect(() => {
+    // This effect handles the setup/reset when a tool is selected or deselected.
+    // It's crucial not to clear temporary features if an operation for that tool is already in progress (form is open).
+
     if (selectedTool === "add-stop") {
+      // If the "add-stop" form is NOT already visible for adding a point,
+      // then it's safe to clear any previous temporary features.
+      if (!(popupFormConfig.isVisible && popupFormConfig.mode === "add")) {
+        setTemporaryMapFeatures([])
+      }
+      // Always update the instruction message. The form visibility is controlled by map click.
       setPopupFormConfig((prev) => ({
         ...prev,
-        isVisible: false, // Hide form until map click
+        isVisible: popupFormConfig.isVisible && popupFormConfig.mode === "add" ? true : false, // Preserve visibility if form is already open for add
         message: "Haga clic en el mapa sobre una ruta para ubicar la nueva parada.",
+        // Do not reset mode or key here if form is already open for 'add'
       }))
-      setTemporaryMapFeatures([]) // Clear previous temp features
     } else if (selectedTool === "edit-stop") {
-      setPopupFormConfig((prev) => ({
-        ...prev,
-        isVisible: false, // Hide form until map click
-        message: "Seleccione una parada existente en el mapa para editarla.",
-      }))
-      setTemporaryMapFeatures([])
-    } else if (selectedTool === "add-line") {
+      setTemporaryMapFeatures([]) // For "edit-stop", we select existing features, so clear temps.
       setPopupFormConfig((prev) => ({
         ...prev,
         isVisible: false,
+        message: "Seleccione una parada existente en el mapa para editarla.",
+      }))
+    } else if (selectedTool === "add-line") {
+      // Only clear line points and temporary line features if not currently finalizing a line
+      if (!isFinalizingLine && !(popupFormConfig.isVisible && popupFormConfig.mode === "add-line")) {
+        setCurrentLinePoints([])
+        setTemporaryMapFeatures([])
+      }
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        isVisible: popupFormConfig.isVisible && popupFormConfig.mode === "add-line" ? true : false,
         message: "Seleccione paradas en orden para crear la línea. Haga clic en 'Finalizar Línea' cuando termine.",
       }))
-      setCurrentLinePoints([])
-      setTemporaryMapFeatures([])
-      setIsFinalizingLine(false)
     } else {
-      setPopupFormConfig((prev) => ({ ...prev, isVisible: false, message: "" }))
-      setTemporaryMapFeatures([])
-      setCurrentLinePoints([])
-      setIsFinalizingLine(false)
+      // Tool is deselected (null) or another tool
+      // Only clear features and form if no form is currently active.
+      // If a form is active, its submit/cancel should handle cleanup.
+      if (!popupFormConfig.isVisible) {
+        setTemporaryMapFeatures([])
+        setCurrentLinePoints([])
+        setPopupFormConfig({ isVisible: false, mode: null, message: "", key: 0, initialData: null, coordinates: null })
+      }
     }
-  }, [selectedTool])
+  }, [selectedTool, isFinalizingLine]) // isFinalizingLine is added to dependencies
 
   const handleToolSelect = (toolId) => {
     setSelectedTool(toolId === selectedTool ? null : toolId) // Toggle tool or set new one
@@ -111,19 +126,29 @@ export default function AdminDashboard() {
     console.log("Map Interaction Received in Dashboard:", interaction)
     // Stop interactions
     if (selectedTool === "add-stop" && interaction.type === "MAP_CLICK_FOR_ADD") {
-      setTemporaryMapFeatures([{ type: "Point", coordinates: interaction.payload.coordinates }])
+      // This is where the new temporary point is set. It should persist.
+      const newTempPoint = { type: "Point", coordinates: interaction.payload.coordinates }
+      setTemporaryMapFeatures([newTempPoint]) // Set ONLY this new point
+
+      // Transform coordinates for initialData if StopForm expects LonLat
+      // Assuming interaction.payload.coordinates are in map projection (UTM)
+      // This transformation should ideally happen here or be passed as raw map coords
+      // and StopForm handles display transformation if needed.
+      // For simplicity, let's assume StopForm can take map coordinates or you transform later.
+      // const lonLatCoords = toLonLat(interaction.payload.coordinates, 'EPSG:32721'); // Example if needed
+
       setPopupFormConfig({
         isVisible: true,
         mode: "add",
-        coordinates: interaction.payload.coordinates,
+        coordinates: interaction.payload.coordinates, // Position for the popup
         initialData: {
-          // Assuming coordinates from map are already in the correct projection for display/use
-          // If they are UTM and form needs LonLat, transform here.
-          lat: interaction.payload.coordinates[1], // Placeholder, adjust based on actual transformed coords
-          lng: interaction.payload.coordinates[0], // Placeholder
+          // Pass map coordinates; form can display them or use them.
+          // If form needs LonLat for display, it should handle it or receive transformed.
+          lat: interaction.payload.coordinates[1], // These are map projection coords
+          lng: interaction.payload.coordinates[0], // These are map projection coords
         },
         message: "Complete los datos de la nueva parada.",
-        key: Date.now(),
+        key: Date.now(), // Force re-render of StopForm
       })
     } else if (selectedTool === "edit-stop" && interaction.type === "FEATURE_CLICK_FOR_EDIT") {
       setPopupFormConfig({
@@ -184,21 +209,33 @@ export default function AdminDashboard() {
     // } else if (popupFormConfig.mode === 'edit') {
     //   await stopService.update(popupFormConfig.initialData.id, formData);
     // }
+
     // After successful save:
-    // - Refresh map data (e.g., by re-fetching or updating the VectorSource)
-    // - Close the popup
-    setPopupFormConfig({ ...popupFormConfig, isVisible: false, message: "Guardado exitoso!" })
+    setTemporaryMapFeatures([]) // Clear the temporary point
+    setPopupFormConfig({
+      isVisible: false,
+      mode: null,
+      message: "Guardado exitoso!",
+      key: 0,
+      initialData: null,
+      coordinates: null,
+    })
     setSelectedTool(null) // Deselect tool
-    setTemporaryMapFeatures([])
-    setCurrentLinePoints([])
-    // TODO: Add map data refresh logic here
+    // TODO: Add map data refresh logic here (e.g., tell MapView to reload sources)
   }
 
   const handleStopFormCancel = () => {
-    setPopupFormConfig({ ...popupFormConfig, isVisible: false, message: "Operación cancelada." })
-    // setSelectedTool(null); // Optionally deselect tool on cancel
-    setTemporaryMapFeatures([])
-    // If was adding line, don't clear currentLinePoints, user might want to adjust form and re-open
+    setTemporaryMapFeatures([]) // Clear the temporary point
+    setPopupFormConfig({
+      isVisible: false,
+      mode: null,
+      message: "Operación cancelada.",
+      key: 0,
+      initialData: null,
+      coordinates: null,
+    })
+    // Optionally keep the tool selected if you want the user to try clicking again:
+    // setSelectedTool(null);
   }
 
   const handleStopFormDelete = async (stopId) => {
