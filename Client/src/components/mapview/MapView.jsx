@@ -96,7 +96,7 @@ export default function MapView({
     const lineSource = new VectorSource({
       format: new GeoJSON(),
       url: (extent) =>
-        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:linea&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
+        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:lineas&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
       strategy: bboxStrategy,
     })
     lineLayerRef.current = new VectorLayer({ source: lineSource, style: defaultLineStyle })
@@ -104,7 +104,7 @@ export default function MapView({
     const stopSource = new VectorSource({
       format: new GeoJSON(),
       url: (extent) =>
-        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:parada&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
+        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:paradas&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
       strategy: bboxStrategy,
     })
     stopLayerRef.current = new VectorLayer({ source: stopSource, style: defaultStopStyle })
@@ -267,7 +267,7 @@ export default function MapView({
 
           if (geom) {
             if (geom.getType() === "Point") {
-              featureType = "Parada"
+              featureType = "Paradas"
               try {
                 lonLatCoords = toLonLat(geom.getCoordinates(), map.getView().getProjection())
               } catch (e) {
@@ -288,7 +288,7 @@ export default function MapView({
           let content = `<h4 class="text-base font-semibold mb-1 text-black">${featureType}: ${props.nombre || props.name || props.descripcion || props.id}</h4><hr class="my-1 border-gray-300"/><dl class="text-xs text-gray-700">`
 
           // Specific fields for stops as requested
-          if (featureType === "Parada") {
+          if (featureType === "Paradas") {
             content += `<dt class="font-medium text-gray-600">Nombre:</dt><dd class="ml-2 mb-1 text-black">${props.nombre || "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Ruta/Km:</dt><dd class="ml-2 mb-1 text-black">${props.ruta_km || props.ruta || "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Departamento:</dt><dd class="ml-2 mb-1 text-black">${props.departamento || "N/D"}</dd>`
