@@ -1,83 +1,97 @@
-
+"use client"
 
 import { useState, useEffect } from "react"
-import useAuthStore from "@/store/AuthStore" // Corrected path assuming store is in src/store
-import {Navbar,MapView,AdminLogin,FilterSidebar,AdminDashboard} from "@/components"
-
+import useAuthStore from "@/store/AuthStore"
+import { Navbar, AdminLogin, FilterSidebar, AdminDashboard } from "@/components"
 
 export default function HomePage() {
   const [currentView, setCurrentView] = useState("map") // 'map', 'login', 'admin'
 
-
-  
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const userRole = useAuthStore((state) => state.role)
   const userLogin = useAuthStore((state) => state.login)
   const userLogout = useAuthStore((state) => state.logout)
+  const isInitialized = useAuthStore((state) => state.isInitialized)
+  const initializeAuth = useAuthStore((state) => state.initializeAuth)
 
+  // Inicializar el estado de autenticación al cargar la página
+  useEffect(() => {
+    if (!isInitialized) {
+      initializeAuth()
+    }
+  }, [isInitialized, initializeAuth])
 
   // Effect to handle initial view or redirection based on persisted auth state
   useEffect(() => {
+    // Solo ejecutar después de que el estado se haya inicializado
+    if (!isInitialized) return
+
+    console.log("Auth state check:", { isAuthenticated, userRole, currentView })
+
+    // Si el usuario está autenticado como admin, asegurar que vea el mapa por defecto
     if (isAuthenticated && userRole === "ADMIN" && currentView === "login") {
-      // If authenticated as admin and somehow on login view, redirect to admin dashboard
-      setCurrentView("admin")
-    } else if (!isAuthenticated && currentView === "admin") {
-      // If not authenticated but trying to access admin view, redirect to map (or login)
-      setCurrentView("map") // Or "login" if you prefer direct login prompt
+      console.log("Redirecting authenticated admin to map view")
+      setCurrentView("map")
     }
-    // If currentView is 'map' and user is admin, they can still view the public map.
-    // Navigation to 'admin' view is explicit via Navbar.
-  }, [isAuthenticated, userRole, currentView])
+  }, [isAuthenticated, userRole, currentView, isInitialized])
 
   const navigateTo = (view, section = null, id = null) => {
+    console.log("Navigating to:", view)
+
     if (view === "logout") {
       userLogout()
       setCurrentView("map") // Go to map view after logout
       return
     }
-    // If trying to access admin view but not authenticated, redirect to login
+    // Si el usuario está autenticado como admin, puede navegar libremente
+    // Si no está autenticado y trata de acceder a admin, redirigir a login
     if (view === "admin" && !isAuthenticated) {
       setCurrentView("login")
       return
     }
     setCurrentView(view)
-    // if (section) setAdminSection(section);
-    // if (id) setEditingId(id);
   }
 
   const handleLoginSuccess = (userData) => {
-    // Assuming your login service returns user data and role, or you define role here
-    // For example, if your backend login returns user details:
-    // zustandLogin(userData.user, userData.role || "ADMIN");
-    // For now, we'll assume the role is ADMIN upon successful login via AdminLogin
-    userLogin(userData || { name: "Admin" }, "ADMIN") // Pass user object and role
-    navigateTo("admin")
+    console.log("Login success with data:", userData)
+    userLogin(userData || { name: "Admin" }, "ADMIN")
+    // Después del login exitoso, ir al mapa con herramientas de admin
+    setCurrentView("map")
   }
+
+  // Mostrar loading mientras se inicializa el estado
+  if (!isInitialized) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    )
+  }
+
+  // Determinar si mostrar herramientas de admin
+  const showAdminTools = isAuthenticated && userRole === "ADMIN"
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <Navbar currentView={currentView} navigateTo={navigateTo} isAuthenticated={isAuthenticated} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Public Map View with Filters */}
-        {currentView === "map" && (
-          <>
-            <FilterSidebar />
-            <main className="flex-1 relative h-full">
-              <MapView isAdmin={false} />
-            </main>
-          </>
-        )}
+        {/* Sidebar izquierdo - Solo filtros si no es admin o no está autenticado */}
+        {currentView === "map" && !showAdminTools && <FilterSidebar />}
 
-        {/* Admin Login View */}
-        {currentView === "login" && !isAuthenticated && (
-          <div className="flex-1 flex items-center justify-center p-4">
-            <AdminLogin onLoginSuccess={handleLoginSuccess} />
-          </div>
-        )}
+        {/* Contenido central */}
+        <main className="flex-1 relative h-full">
+          {currentView === "map" && <AdminDashboard isAdmin={showAdminTools} />}
 
-        {/* Admin Dashboard View - only if authenticated as ADMIN */}
-        {currentView === "admin" && isAuthenticated && userRole === "ADMIN" && <AdminDashboard />}
+          {currentView === "login" && !isAuthenticated && (
+            <div className="flex items-center justify-center h-full p-4">
+              <AdminLogin onLoginSuccess={handleLoginSuccess} />
+            </div>
+          )}
+        </main>
+
+        {/* Panel de herramientas de admin - Siempre visible del lado derecho si está autenticado como admin */}
+        {/* Este panel ahora está integrado en AdminDashboard */}
       </div>
     </div>
   )

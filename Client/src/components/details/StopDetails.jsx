@@ -1,4 +1,3 @@
-
 const StopDetails = ({ stop, onClose }) => {
   // aca va venir datos de la api
   const mockSchedules = [

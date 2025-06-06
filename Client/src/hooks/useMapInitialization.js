@@ -114,4 +114,3 @@ export const useMapInitialization = (mapTargetId, popupTargetId, initialViewOpti
 
   return { mapRef, popupOverlayRef, getMap, isMapInitialized };
 };
-

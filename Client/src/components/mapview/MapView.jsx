@@ -1,8 +1,8 @@
+"use client"
 
 import { useEffect, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import "ol/ol.css"
-import Icon from "ol/style/Icon"
 import Map from "ol/Map"
 import View from "ol/View"
 import TileLayer from "ol/layer/Tile"
@@ -17,12 +17,9 @@ import { bbox as bboxStrategy } from "ol/loadingstrategy"
 import proj4 from "proj4"
 import { register } from "ol/proj/proj4"
 import Overlay from "ol/Overlay"
-import {StopForm,LineForm} from "@/components"
-import { get as getProjection, transform, toLonLat, fromLonLat } from "ol/proj"
+import { StopForm, LineForm } from "@/components"
+import { get as getProjection } from "ol/proj"
 import { Modify } from "ol/interaction"
-
-
-
 
 const temporaryMarkerStyle = new Style({
   image: new CircleStyle({
@@ -40,8 +37,16 @@ const temporaryMarkerStyle = new Style({
 const selectedForLineStyle = new Style({
   image: new CircleStyle({
     radius: 8,
-    fill: new Fill({ color: "rgba(34, 197, 94, 0.7)" }), // Greenish
+    fill: new Fill({ color: "rgba(34, 197, 94, 0.7)" }), // Greenish for selected stops
     stroke: new Stroke({ color: "rgba(22, 163, 74, 1)", width: 2 }),
+  }),
+})
+
+const routePointStyle = new Style({
+  image: new CircleStyle({
+    radius: 5,
+    fill: new Fill({ color: "rgba(255, 165, 0, 0.7)" }), // Orange for route points
+    stroke: new Stroke({ color: "rgba(255, 140, 0, 1)", width: 2 }),
   }),
 })
 
@@ -90,13 +95,13 @@ export default function MapView({
       return
     }
 
-    const montevideoLonLat = [-56.164532, -34.901112]
-    const centerUtm = transform(montevideoLonLat, "EPSG:4326", utmProjection)
+    // Centro de Montevideo en coordenadas UTM 32721
+    const montevideoUTM = [583000, 6140000] // Aproximadamente
 
     const lineSource = new VectorSource({
       format: new GeoJSON(),
       url: (extent) =>
-        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:lineas&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
+        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:linea&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
       strategy: bboxStrategy,
     })
     lineLayerRef.current = new VectorLayer({ source: lineSource, style: defaultLineStyle })
@@ -104,15 +109,33 @@ export default function MapView({
     const stopSource = new VectorSource({
       format: new GeoJSON(),
       url: (extent) =>
-        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:paradas&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
+        `/geoserver/tsig2025/ows?service=WFS&version=1.1.0&request=GetFeature&typename=tsig2025:parada&outputFormat=application/json&srsname=EPSG:32721&bbox=${extent.join(",")},EPSG:32721`,
       strategy: bboxStrategy,
     })
-    stopLayerRef.current = new VectorLayer({ source: stopSource, style: defaultStopStyle })
+    stopLayerRef.current = new VectorLayer({
+      source: stopSource,
+      style: (feature) => {
+        const estado = feature.get("estado") ?? feature.get("activa")
+        return new Style({
+          image: new CircleStyle({
+            radius: 6,
+            fill: new Fill({
+              color: estado ? "rgba(34, 197, 94, 0.7)" : "rgba(239, 68, 68, 0.7)",
+            }),
+            stroke: new Stroke({ color: "white", width: 1.5 }),
+          }),
+        })
+      },
+    })
 
     temporaryLayerRef.current = new VectorLayer({
       source: new VectorSource(),
-      style: (feature) =>
-        feature.get("style_type") === "selectedForLine" ? selectedForLineStyle : temporaryMarkerStyle,
+      style: (feature) => {
+        const styleType = feature.get("style_type")
+        if (styleType === "selectedForLine") return selectedForLineStyle
+        if (styleType === "routePoint") return routePointStyle
+        return temporaryMarkerStyle
+      },
     })
 
     if (popupElementRef.current) {
@@ -131,10 +154,17 @@ export default function MapView({
         stopLayerRef.current,
         temporaryLayerRef.current,
       ],
-      view: new View({ projection: utmProjection, center: centerUtm, zoom: 10 }),
+      view: new View({
+        projection: utmProjection,
+        center: montevideoUTM,
+        zoom: 10,
+      }),
       overlays: popupOverlayRef.current ? [popupOverlayRef.current] : [],
     })
     mapInstanceRef.current = map
+
+    // Hacer la referencia del mapa disponible globalmente para edición
+    window.mapInstanceRef = mapInstanceRef
 
     return () => {
       if (popupRootRef.current) {
@@ -182,41 +212,63 @@ export default function MapView({
         })
 
         if (activeTool === "add-stop") {
-          onMapInteractionRequest({ type: "MAP_CLICK_FOR_ADD", payload: { coordinates: evt.coordinate } })
-        } else if (activeTool === "add-line" && featureClicked && layerClicked === stopLayerRef.current) {
+          // Enviar coordenadas UTM directamente
           onMapInteractionRequest({
-            type: "STOP_CLICK_FOR_LINE",
+            type: "MAP_CLICK_FOR_ADD",
+            payload: { coordinates: evt.coordinate },
+          })
+        } else if (activeTool === "add-line") {
+          if (featureClicked && layerClicked === stopLayerRef.current) {
+            // Clicked on a stop - add it to the line
+            onMapInteractionRequest({
+              type: "STOP_CLICK_FOR_LINE",
+              payload: {
+                featureData: featureClicked.getProperties(),
+                coordinates: featureClicked.getGeometry().getCoordinates(),
+              },
+            })
+          } else {
+            // Clicked on empty space - add route point
+            onMapInteractionRequest({
+              type: "MAP_CLICK_FOR_LINE_ROUTE",
+              payload: { coordinates: evt.coordinate },
+            })
+          }
+        } else if (activeTool === "edit-stop" && featureClicked && layerClicked === stopLayerRef.current) {
+          const props = featureClicked.getProperties()
+          const geom = featureClicked.getGeometry()
+          const coordinates = geom.getCoordinates()
+
+          // Usar coordenadas UTM directamente sin transformar
+          const enrichedProps = {
+            ...props,
+            lat: coordinates[1], // Y = Coordenada Y UTM
+            lng: coordinates[0], // X = Coordenada X UTM
+          }
+
+          onMapInteractionRequest({
+            type: "FEATURE_CLICK_FOR_EDIT",
+            payload: {
+              featureData: enrichedProps,
+              coordinates: coordinates,
+            },
+          })
+        } else if (activeTool === "delete-stop" && featureClicked && layerClicked === stopLayerRef.current) {
+          onMapInteractionRequest({
+            type: "FEATURE_CLICK_FOR_DELETE",
             payload: {
               featureData: featureClicked.getProperties(),
               coordinates: featureClicked.getGeometry().getCoordinates(),
             },
           })
-      } else if (activeTool === "edit-stop" && featureClicked && layerClicked === stopLayerRef.current) {
-        const props = featureClicked.getProperties();
-        const geom = featureClicked.getGeometry();
-        let coordinates = geom.getCoordinates();
-        let lonLatCoords = ["", ""];
-
-        try {
-          lonLatCoords = toLonLat(coordinates, map.getView().getProjection());
-        } catch (e) {
-          console.error("Error transforming coordinates for edit-stop:", e);
-        }
-
-        const enrichedProps = {
-          ...props,
-          lat: lonLatCoords[1], // Y = Latitud
-          lng: lonLatCoords[0], // X = Longitud
-        };
-
-        onMapInteractionRequest({
-          type: "FEATURE_CLICK_FOR_EDIT",
-          payload: {
-            featureData: enrichedProps,
-            coordinates: coordinates, // Mantiene el centro UTM para mostrar el popup
-          },
-        });
-
+        } else if (activeTool === "delete-line" && featureClicked && layerClicked === lineLayerRef.current) {
+          onMapInteractionRequest({
+            type: "LINE_CLICK_FOR_DELETE",
+            payload: {
+              featureData: featureClicked.getProperties(),
+              coordinates: evt.coordinate,
+            },
+          })
         } else if (activeTool === "edit-line" && featureClicked && layerClicked === lineLayerRef.current) {
           onMapInteractionRequest({
             type: "LINE_CLICK_FOR_EDIT",
@@ -226,12 +278,13 @@ export default function MapView({
           // Admin general click on a feature - show info
           const props = featureClicked.getProperties()
           const geom = featureClicked.getGeometry()
-          let lonLatCoords = ["N/A", "N/A"]
+          let utmCoords = ["N/A", "N/A"]
           if (geom && typeof geom.getCoordinates === "function") {
             try {
-              lonLatCoords = toLonLat(geom.getCoordinates(), map.getView().getProjection())
+              const coords = geom.getCoordinates()
+              utmCoords = [coords[0].toFixed(2), coords[1].toFixed(2)]
             } catch (e) {
-              console.error("Error transforming coordinates for admin info popup:", e)
+              console.error("Error getting UTM coordinates for admin info popup:", e)
             }
           }
 
@@ -241,7 +294,7 @@ export default function MapView({
               content += `<dt class="font-medium text-gray-600">${key}</dt><dd class="ml-2 mb-1 text-black">${JSON.stringify(props[key])}</dd>`
             }
           }
-          content += `<dt class="font-medium text-gray-600">Coords (Lon/Lat)</dt><dd class="ml-2 mb-1 text-black">${lonLatCoords[0].toFixed(6)}, ${lonLatCoords[1].toFixed(6)}</dd>`
+          content += `<dt class="font-medium text-gray-600">Coords UTM (X/Y)</dt><dd class="ml-2 mb-1 text-black">${utmCoords[0]}, ${utmCoords[1]}</dd>`
           content += `</dl><button id="popup-closer-btn" class="ol-popup-closer">&times;</button>`
 
           if (popupElementRef.current && popupOverlayRef.current) {
@@ -262,25 +315,24 @@ export default function MapView({
         if (featureClicked && popupElementRef.current && popupOverlayRef.current) {
           const props = featureClicked.getProperties()
           const geom = featureClicked.getGeometry()
-          let lonLatCoords = ["N/A", "N/A"]
+          let utmCoords = ["N/A", "N/A"]
           let featureType = "Elemento"
 
           if (geom) {
             if (geom.getType() === "Point") {
-              featureType = "Paradas"
+              featureType = "Parada"
               try {
-                lonLatCoords = toLonLat(geom.getCoordinates(), map.getView().getProjection())
+                const coords = geom.getCoordinates()
+                utmCoords = [coords[0].toFixed(2), coords[1].toFixed(2)]
               } catch (e) {
-                console.error("Error transforming point coordinates:", e)
+                console.error("Error getting UTM coordinates for point:", e)
               }
             } else if (geom.getType() === "LineString" || geom.getType() === "MultiLineString") {
               featureType = "Línea"
-              // For lines, displaying a single coordinate might not be useful,
-              // but we can take the click coordinate.
               try {
-                lonLatCoords = toLonLat(evt.coordinate, map.getView().getProjection())
+                utmCoords = [evt.coordinate[0].toFixed(2), evt.coordinate[1].toFixed(2)]
               } catch (e) {
-                console.error("Error transforming line click coordinates:", e)
+                console.error("Error getting UTM coordinates for line click:", e)
               }
             }
           }
@@ -288,7 +340,7 @@ export default function MapView({
           let content = `<h4 class="text-base font-semibold mb-1 text-black">${featureType}: ${props.nombre || props.name || props.descripcion || props.id}</h4><hr class="my-1 border-gray-300"/><dl class="text-xs text-gray-700">`
 
           // Specific fields for stops as requested
-          if (featureType === "Paradas") {
+          if (featureType === "Parada") {
             content += `<dt class="font-medium text-gray-600">Nombre:</dt><dd class="ml-2 mb-1 text-black">${props.nombre || "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Ruta/Km:</dt><dd class="ml-2 mb-1 text-black">${props.ruta_km || props.ruta || "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Departamento:</dt><dd class="ml-2 mb-1 text-black">${props.departamento || "N/D"}</dd>`
@@ -296,7 +348,7 @@ export default function MapView({
             content += `<dt class="font-medium text-gray-600">Estado:</dt><dd class="ml-2 mb-1 text-black">${typeof props.activa === "boolean" ? (props.activa ? "Habilitada" : "Deshabilitada") : "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Refugio:</dt><dd class="ml-2 mb-1 text-black">${typeof props.refugio === "boolean" ? (props.refugio ? "Sí" : "No") : "N/D"}</dd>`
             content += `<dt class="font-medium text-gray-600">Observaciones:</dt><dd class="ml-2 mb-1 text-black">${props.observaciones || "Ninguna"}</dd>`
-            content += `<dt class="font-medium text-gray-600">Coords (Lon/Lat):</dt><dd class="ml-2 mb-1 text-black">${lonLatCoords[0].toFixed(5)}, ${lonLatCoords[1].toFixed(5)}</dd>`
+            content += `<dt class="font-medium text-gray-600">Coords UTM (X/Y):</dt><dd class="ml-2 mb-1 text-black">${utmCoords[0]}, ${utmCoords[1]}</dd>`
           } else {
             // Generic display for other feature types (like lines)
             for (const key in props) {
@@ -317,7 +369,7 @@ export default function MapView({
     }
     map.on("click", clickHandler)
     return () => map.un("click", clickHandler)
-  }, [isAdmin, activeTool, onMapInteractionRequest, popupFormConfig?.isVisible]) // popupFormConfig.isVisible ensures re-binding if form closes
+  }, [isAdmin, activeTool, onMapInteractionRequest, popupFormConfig])
 
   // Render/update temporary features
   useEffect(() => {
@@ -336,7 +388,9 @@ export default function MapView({
             if (geom) {
               const feature = new Feature({ geometry: geom })
               if (featureData.style === "selectedForLine") {
-                feature.set("style_type", "selectedForLine") // Used by layer style function
+                feature.set("style_type", "selectedForLine")
+              } else if (featureData.style === "routePoint") {
+                feature.set("style_type", "routePoint")
               }
               return feature
             }
@@ -348,77 +402,110 @@ export default function MapView({
     }
   }, [temporaryFeatures])
 
-  const editableMarkerRef = useRef(null);
-const editableLayerRef = useRef(null);
- const isMovingStopRef = useRef(false);
+  const editableMarkerRef = useRef(null)
+  const editableLayerRef = useRef(null)
+  const isMovingStopRef = useRef(false)
 
-useEffect(() => {
-  const handleStartEdit = (e) => {
-    isMovingStopRef.current = true;
-    const { lat, lng, id } = e.detail;
-    if (!mapRef.current) return;
+  // Mejorar la función de limpieza de edición
+  const cleanupEditMode = () => {
+    if (mapInstanceRef.current) {
+      const map = mapInstanceRef.current
 
-  const map = mapInstanceRef.current;
+      // Eliminar capas editables
+      map
+        .getLayers()
+        .getArray()
+        .forEach((layer) => {
+          if (layer && layer.get && layer.get("isEditable") === true) {
+            map.removeLayer(layer)
+          }
+        })
 
-    // Si ya hay un marcador editable, lo eliminamos
-      if (editableLayerRef.current) {
-        map.removeLayer(editableLayerRef.current);
-        editableLayerRef.current = null;
-      }
-      if (editableMarkerRef.current) {
-        editableMarkerRef.current = null;
-      }
+      // Eliminar interacciones de modificación
+      const interactionsToRemove = []
       map.getInteractions().forEach((interaction) => {
         if (interaction instanceof Modify) {
-          map.removeInteraction(interaction);
+          interactionsToRemove.push(interaction)
         }
-      });
-
-
-    const point = new Point(fromLonLat([lng, lat]));
-    const feature = new Feature({ geometry: point });
-
-    feature.setStyle(
-      new Style({
-        image: new Icon({
-          src: "/marker-icon.png", // ícono opcional
-          anchor: [0.5, 1],
-          scale: 1,
-        }),
       })
-    );
 
-    const source = new VectorSource({ features: [feature] });
-    const vectorLayer = new VectorLayer({ source });
+      interactionsToRemove.forEach((interaction) => {
+        map.removeInteraction(interaction)
+      })
 
-    editableLayerRef.current = vectorLayer;
-    editableMarkerRef.current = feature;
-    map.addLayer(vectorLayer);
+      // Resetear referencias
+      editableMarkerRef.current = null
+      editableLayerRef.current = null
+      isMovingStopRef.current = false
+    }
+  }
 
-    const modify = new Modify({ source });
-    map.addInteraction(modify);
+  // Agregar la función cleanupEditMode al efecto que maneja el evento end-edit-stop-location
+  useEffect(() => {
+    const handleStartEdit = (e) => {
+      isMovingStopRef.current = true
+      const { lat, lng, id } = e.detail
+      if (!mapRef.current) return
 
-    modify.on("modifyend", (evt) => {
-      const coords = feature.getGeometry().getCoordinates();
-      const [lon, lat] = toLonLat(coords);
+      const map = mapInstanceRef.current
 
-      window.dispatchEvent(
-        new CustomEvent("update-stop-coordinates", {
-          detail: {
-            lat: lat.toFixed(6),
-            lng: lon.toFixed(6),
-          },
-        })
-      );
-    });
-  };
+      // Limpiar cualquier edición previa
+      cleanupEditMode()
 
- 
+      // Usar coordenadas UTM directamente
+      const point = new Point([Number.parseFloat(lng), Number.parseFloat(lat)])
+      const feature = new Feature({ geometry: point })
 
+      feature.setStyle(
+        new Style({
+          image: new CircleStyle({
+            radius: 8,
+            fill: new Fill({ color: "rgba(255, 165, 0, 0.8)" }), // Orange for editing
+            stroke: new Stroke({ color: "rgba(255, 140, 0, 1)", width: 3 }),
+          }),
+        }),
+      )
 
-  window.addEventListener("start-edit-stop-location", handleStartEdit);
-  return () => window.removeEventListener("start-edit-stop-location", handleStartEdit);
-}, []);
+      const source = new VectorSource({ features: [feature] })
+      const vectorLayer = new VectorLayer({ source })
+
+      // Marcar la capa como editable para poder limpiarla después
+      vectorLayer.set("isEditable", true)
+
+      editableLayerRef.current = vectorLayer
+      editableMarkerRef.current = feature
+      map.addLayer(vectorLayer)
+
+      const modify = new Modify({ source })
+      map.addInteraction(modify)
+
+      modify.on("modifyend", (evt) => {
+        const coords = feature.getGeometry().getCoordinates()
+        // Mantener coordenadas UTM
+        window.dispatchEvent(
+          new CustomEvent("update-stop-coordinates", {
+            detail: {
+              lat: coords[1].toFixed(2), // Y UTM
+              lng: coords[0].toFixed(2), // X UTM
+            },
+          }),
+        )
+      })
+    }
+
+    const handleEndEdit = () => {
+      cleanupEditMode()
+    }
+
+    window.addEventListener("start-edit-stop-location", handleStartEdit)
+    window.addEventListener("end-edit-stop-location", handleEndEdit)
+
+    return () => {
+      window.removeEventListener("start-edit-stop-location", handleStartEdit)
+      window.removeEventListener("end-edit-stop-location", handleEndEdit)
+      cleanupEditMode()
+    }
+  }, [])
 
   // Manage React form popup
   useEffect(() => {
@@ -473,40 +560,71 @@ useEffect(() => {
     }
   }, [popupFormConfig, onStopFormSubmit, onStopFormCancel, onStopFormDelete, onLineFormSubmit, onLineFormCancel])
 
+  // Mejorado: Manejo de clics para mover el punto editable
+  useEffect(() => {
+    const handleClickToMove = (evt) => {
+      // Solo procesar si estamos en modo de edición de ubicación
+      if (!isMovingStopRef.current) return
+      if (!editableMarkerRef.current || !editableLayerRef.current || !mapInstanceRef.current) return
 
-    useEffect(() => {
-const handleClickToMove = (evt) => {
-  if (!isMovingStopRef.current) return;
-  if (!editableMarkerRef.current || !editableLayerRef.current || !mapInstanceRef.current) return;
+      // No procesar clics en el popup del formulario
+      if (evt.originalEvent?.target.closest("#popup-form-container")) return
 
-  if (evt.originalEvent?.target.closest("#popup-form-container")) return;
+      // Verificar si el clic fue en una feature existente (parada o línea)
+      const map = mapInstanceRef.current
+      let clickedOnFeature = false
 
-  const newCoord = evt.coordinate;
-  editableMarkerRef.current.getGeometry().setCoordinates(newCoord);
+      map.forEachFeatureAtPixel(evt.pixel, (feature, layer) => {
+        // Si el clic fue en una feature que no es la capa editable, ignorar
+        if (layer !== editableLayerRef.current) {
+          clickedOnFeature = true
+        }
+      })
 
-  const [lon, lat] = toLonLat(newCoord, mapInstanceRef.current.getView().getProjection());
-  window.dispatchEvent(
-    new CustomEvent("update-stop-coordinates", {
-      detail: {
-        lat: lat.toFixed(6),
-        lng: lon.toFixed(6),
-      },
-    })
-  );
-};
+      // Si se hizo clic en una feature existente (no editable), no mover el punto
+      if (clickedOnFeature) return
 
+      // Mover el punto editable a la nueva posición
+      const newCoord = evt.coordinate
+      editableMarkerRef.current.getGeometry().setCoordinates(newCoord)
 
-  const map = mapInstanceRef.current;
-  if (map) {
-    map.on("singleclick", handleClickToMove);
-  }
-
-  return () => {
-    if (map) {
-      map.un("singleclick", handleClickToMove);
+      // Actualizar las coordenadas en el formulario
+      window.dispatchEvent(
+        new CustomEvent("update-stop-coordinates", {
+          detail: {
+            lat: newCoord[1].toFixed(2), // Y UTM
+            lng: newCoord[0].toFixed(2), // X UTM
+          },
+        }),
+      )
     }
-  };
-}, []);
+
+    const map = mapInstanceRef.current
+    if (map) {
+      map.on("singleclick", handleClickToMove)
+    }
+
+    return () => {
+      if (map) {
+        map.un("singleclick", handleClickToMove)
+      }
+    }
+  }, [])
+
+  // Refresh map data when requested
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (stopLayerRef.current) {
+        stopLayerRef.current.getSource().refresh()
+      }
+      if (lineLayerRef.current) {
+        lineLayerRef.current.getSource().refresh()
+      }
+    }
+
+    window.addEventListener("refresh-map-data", handleRefresh)
+    return () => window.removeEventListener("refresh-map-data", handleRefresh)
+  }, [])
 
   return (
     <div className="w-full h-full relative">

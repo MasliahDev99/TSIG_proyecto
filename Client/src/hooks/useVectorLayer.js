@@ -122,4 +122,3 @@ export const useVectorLayer = (mapInstance, data, options = {}) => {
 
   return layerRef.current; // Devolver la instancia de la capa
 };
-

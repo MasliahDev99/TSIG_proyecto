@@ -1,7 +1,20 @@
+"use client"
 
-import { MapView} from "@/components"
-import { useState, useEffect } from "react"
-import { PlusCircleIcon, EditIcon, MessageSquareTextIcon, CheckCircleIcon, RouteIcon } from "lucide-react"
+import { MapView } from "@/components"
+import { useState, useEffect, useRef } from "react"
+import {
+  PlusCircleIcon,
+  EditIcon,
+  MessageSquareTextIcon,
+  CheckCircleIcon,
+  RouteIcon,
+  TrashIcon,
+  BarChart3Icon,
+  DownloadIcon,
+  UploadIcon,
+  DatabaseIcon,
+} from "lucide-react"
+import axios from "axios"
 
 const AdminToolsPanel = ({
   onToolSelect,
@@ -9,25 +22,64 @@ const AdminToolsPanel = ({
   instructionMessage,
   onFinalizeLine,
   currentLinePointsCount,
+  currentStopsCount,
+  onExportData,
+  onImportData,
+  onViewStatistics,
+  onManageDatabase,
 }) => {
   const tools = [
     { id: "add-stop", label: "Añadir Parada", icon: <PlusCircleIcon className="mr-2 h-5 w-5" /> },
     { id: "edit-stop", label: "Editar Parada", icon: <EditIcon className="mr-2 h-5 w-5" /> },
+    { id: "delete-stop", label: "Eliminar Parada", icon: <TrashIcon className="mr-2 h-5 w-5" /> },
     { id: "add-line", label: "Añadir Línea", icon: <RouteIcon className="mr-2 h-5 w-5" /> },
-    // { id: "edit-line", label: "Editar Línea", icon: <EditIcon className="mr-2 h-5 w-5" /> }, // Placeholder for future
+    { id: "edit-line", label: "Editar Línea", icon: <EditIcon className="mr-2 h-5 w-5" /> },
+    { id: "delete-line", label: "Eliminar Línea", icon: <TrashIcon className="mr-2 h-5 w-5" /> },
   ]
 
+  const utilityTools = [
+    { id: "statistics", label: "Ver Estadísticas", icon: <BarChart3Icon className="mr-2 h-5 w-5" /> },
+    { id: "export", label: "Exportar Datos", icon: <DownloadIcon className="mr-2 h-5 w-5" /> },
+    { id: "import", label: "Importar Datos", icon: <UploadIcon className="mr-2 h-5 w-5" /> },
+    { id: "database", label: "Gestión BD", icon: <DatabaseIcon className="mr-2 h-5 w-5" /> },
+  ]
+
+  const handleUtilityClick = (toolId) => {
+    switch (toolId) {
+      case "statistics":
+        onViewStatistics()
+        break
+      case "export":
+        onExportData()
+        break
+      case "import":
+        onImportData()
+        break
+      case "database":
+        onManageDatabase()
+        break
+      default:
+        break
+    }
+  }
+
   return (
-    <div className="w-80 bg-white dark:bg-gray-800 p-6 space-y-4 shadow-lg overflow-y-auto">
+    <div className="w-80 h-full bg-white dark:bg-gray-800 p-6 space-y-4 shadow-lg overflow-y-auto border-l border-gray-200">
       <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Herramientas de Admin</h3>
       <hr className="border-gray-200 dark:border-gray-700 mb-4" />
+
       {instructionMessage && (
         <div className="p-3 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg dark:bg-blue-200 dark:text-blue-800 flex items-start">
           <MessageSquareTextIcon className="h-5 w-5 mr-2 flex-shrink-0" />
           <span>{instructionMessage}</span>
         </div>
       )}
+
+      {/* Herramientas principales */}
       <div className="space-y-2">
+        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          Gestión de Datos
+        </h4>
         {tools.map((tool) => (
           <button
             key={tool.id}
@@ -43,189 +95,298 @@ const AdminToolsPanel = ({
             {tool.label}
           </button>
         ))}
+
         {selectedTool === "add-line" && currentLinePointsCount > 0 && (
-          <button
-            onClick={onFinalizeLine}
-            className="w-full flex items-center justify-center mt-4 px-3 py-2 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-          >
-            <CheckCircleIcon className="mr-2 h-5 w-5" />
-            Finalizar Línea ({currentLinePointsCount} {currentLinePointsCount === 1 ? "parada" : "paradas"})
-          </button>
+          <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
+            <div className="text-sm text-green-800 mb-2">
+              <strong>Puntos seleccionados: {currentLinePointsCount}</strong>
+            </div>
+            <div className="text-xs text-green-700 mb-3">
+              • Paradas: {currentStopsCount}• Puntos de ruta: {currentLinePointsCount - currentStopsCount}
+            </div>
+            <button
+              onClick={onFinalizeLine}
+              className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+            >
+              <CheckCircleIcon className="mr-2 h-5 w-5" />
+              Finalizar Línea
+            </button>
+          </div>
         )}
+      </div>
+
+      {/* Herramientas de utilidad */}
+      <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Utilidades</h4>
+        {utilityTools.map((tool) => (
+          <button
+            key={tool.id}
+            onClick={() => handleUtilityClick(tool.id)}
+            className="w-full flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            {tool.icon}
+            {tool.label}
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ isAdmin = false }) {
   const [selectedTool, setSelectedTool] = useState(null)
   const [popupFormConfig, setPopupFormConfig] = useState({
     isVisible: false,
-    mode: null, // 'add' or 'edit'
+    mode: null,
     coordinates: null,
     initialData: null,
-    message: "", // Instructional message
-    key: 0, // To force re-render of StopForm in popup
+    message: "",
+    key: 0,
   })
-  const [temporaryMapFeatures, setTemporaryMapFeatures] = useState([]) // For visual feedback
-  const [currentLinePoints, setCurrentLinePoints] = useState([]) // For 'add-line' tool
+  const [temporaryMapFeatures, setTemporaryMapFeatures] = useState([])
+  const [currentLinePoints, setCurrentLinePoints] = useState([]) // Todos los puntos (paradas + puntos de ruta)
+  const [currentLineStops, setCurrentLineStops] = useState([]) // Solo las paradas
   const [isFinalizingLine, setIsFinalizingLine] = useState(false)
+  const [showStatistics, setShowStatistics] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const processingRef = useRef(false)
 
   useEffect(() => {
-    // This effect handles the setup/reset when a tool is selected or deselected.
-    // It's crucial not to clear temporary features if an operation for that tool is already in progress (form is open).
-
     if (selectedTool === "add-stop") {
-      // If the "add-stop" form is NOT already visible for adding a point,
-      // then it's safe to clear any previous temporary features.
       if (!(popupFormConfig.isVisible && popupFormConfig.mode === "add")) {
         setTemporaryMapFeatures([])
       }
-      // Always update the instruction message. The form visibility is controlled by map click.
       setPopupFormConfig((prev) => ({
         ...prev,
-        isVisible: popupFormConfig.isVisible && popupFormConfig.mode === "add" ? true : false, // Preserve visibility if form is already open for add
-        message: "Haga clic en el mapa sobre una ruta para ubicar la nueva parada.",
-        // Do not reset mode or key here if form is already open for 'add'
+        isVisible: popupFormConfig.isVisible && popupFormConfig.mode === "add" ? true : false,
+        message: "Haga clic en el mapa para ubicar la nueva parada.",
       }))
     } else if (selectedTool === "edit-stop") {
-      setTemporaryMapFeatures([]) // For "edit-stop", we select existing features, so clear temps.
+      setTemporaryMapFeatures([])
       setPopupFormConfig((prev) => ({
         ...prev,
         isVisible: false,
         message: "Seleccione una parada existente en el mapa para editarla.",
       }))
+    } else if (selectedTool === "delete-stop") {
+      setTemporaryMapFeatures([])
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        isVisible: false,
+        message: "Seleccione una parada existente en el mapa para eliminarla.",
+      }))
     } else if (selectedTool === "add-line") {
-      // Only clear line points and temporary line features if not currently finalizing a line
       if (!isFinalizingLine && !(popupFormConfig.isVisible && popupFormConfig.mode === "add-line")) {
         setCurrentLinePoints([])
+        setCurrentLineStops([])
         setTemporaryMapFeatures([])
       }
       setPopupFormConfig((prev) => ({
         ...prev,
         isVisible: popupFormConfig.isVisible && popupFormConfig.mode === "add-line" ? true : false,
-        message: "Seleccione paradas en orden para crear la línea. Haga clic en 'Finalizar Línea' cuando termine.",
+        message:
+          "Haga clic en paradas para asignarlas a la línea, o en puntos vacíos para definir la ruta. Finalice cuando termine.",
+      }))
+    } else if (selectedTool === "edit-line") {
+      setTemporaryMapFeatures([])
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        isVisible: false,
+        message: "Seleccione una línea existente en el mapa para editarla.",
+      }))
+    } else if (selectedTool === "delete-line") {
+      setTemporaryMapFeatures([])
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        isVisible: false,
+        message: "Seleccione una línea existente en el mapa para eliminarla.",
       }))
     } else {
-      // Tool is deselected (null) or another tool
-      // Only clear features and form if no form is currently active.
-      // If a form is active, its submit/cancel should handle cleanup.
       if (!popupFormConfig.isVisible) {
         setTemporaryMapFeatures([])
         setCurrentLinePoints([])
+        setCurrentLineStops([])
         setPopupFormConfig({ isVisible: false, mode: null, message: "", key: 0, initialData: null, coordinates: null })
       }
     }
-  }, [selectedTool, isFinalizingLine]) // isFinalizingLine is added to dependencies
+  }, [selectedTool, isFinalizingLine])
 
   const handleToolSelect = (toolId) => {
-    setSelectedTool(toolId === selectedTool ? null : toolId) // Toggle tool or set new one
+    setSelectedTool(toolId === selectedTool ? null : toolId)
   }
 
   const handleMapInteraction = (interaction) => {
     console.log("Map Interaction Received in Dashboard:", interaction)
-    // Stop interactions
-    if (selectedTool === "add-stop" && interaction.type === "MAP_CLICK_FOR_ADD") {
-      // This is where the new temporary point is set. It should persist.
-      const newTempPoint = { type: "Point", coordinates: interaction.payload.coordinates }
-      setTemporaryMapFeatures([newTempPoint]) // Set ONLY this new point
 
-      // Transform coordinates for initialData if StopForm expects LonLat
-      // Assuming interaction.payload.coordinates are in map projection (UTM)
-      // This transformation should ideally happen here or be passed as raw map coords
-      // and StopForm handles display transformation if needed.
-      // For simplicity, let's assume StopForm can take map coordinates or you transform later.
-      // const lonLatCoords = toLonLat(interaction.payload.coordinates, 'EPSG:32721'); // Example if needed
+    if (selectedTool === "add-stop" && interaction.type === "MAP_CLICK_FOR_ADD") {
+      const newTempPoint = { type: "Point", coordinates: interaction.payload.coordinates }
+      setTemporaryMapFeatures([newTempPoint])
 
       setPopupFormConfig({
         isVisible: true,
         mode: "add",
-        coordinates: interaction.payload.coordinates, // Position for the popup
+        coordinates: interaction.payload.coordinates,
         initialData: {
-          // Pass map coordinates; form can display them or use them.
-          // If form needs LonLat for display, it should handle it or receive transformed.
-          lat: interaction.payload.coordinates[1], // These are map projection coords
-          lng: interaction.payload.coordinates[0], // These are map projection coords
+          lat: interaction.payload.coordinates[1],
+          lng: interaction.payload.coordinates[0],
         },
         message: "Complete los datos de la nueva parada.",
-        key: Date.now(), // Force re-render of StopForm
+        key: Date.now(),
       })
     } else if (selectedTool === "edit-stop" && interaction.type === "FEATURE_CLICK_FOR_EDIT") {
       setPopupFormConfig({
         isVisible: true,
         mode: "edit",
-        coordinates: interaction.payload.coordinates, // Coordinates of the clicked feature
+        coordinates: interaction.payload.coordinates,
         initialData: interaction.payload.featureData,
         message: "Editando parada existente.",
         key: Date.now(),
       })
-      setTemporaryMapFeatures([]) // Clear temp features as we are editing an existing one
-    }
-    // Line interactions
-    else if (selectedTool === "add-line" && interaction.type === "STOP_CLICK_FOR_LINE") {
-      const newPoint = {
-        id: interaction.payload.featureData.id_parada || interaction.payload.featureData.id, // Adjust based on your stop ID property
+      setTemporaryMapFeatures([])
+    } else if (selectedTool === "delete-stop" && interaction.type === "FEATURE_CLICK_FOR_DELETE") {
+      const stopData = interaction.payload.featureData
+      const stopId = stopData.id_parada || stopData.id
+      if (!stopId) {
+        alert("ID de parada no definido. No se puede eliminar.")
+        return
+      }
+      if (window.confirm(`¿Está seguro de que desea eliminar la parada "${stopData.nombre || stopData.name}"?`)) {
+        handleStopDelete(stopId)
+      }
+    } else if (selectedTool === "add-line" && interaction.type === "STOP_CLICK_FOR_LINE") {
+      // Clicked on a stop - add it to both points and stops arrays
+      const newStop = {
+        id: interaction.payload.featureData.id_parada || interaction.payload.featureData.id,
         name: interaction.payload.featureData.nombre || interaction.payload.featureData.name,
-        coordinates: interaction.payload.coordinates, // These are map coordinates (e.g., UTM)
+        coordinates: interaction.payload.coordinates,
+        type: "stop", // Mark as stop
       }
-      const updatedLinePoints = [...currentLinePoints, newPoint]
-      setCurrentLinePoints(updatedLinePoints)
 
-      // Update temporary features to draw the line in progress
-      if (updatedLinePoints.length > 0) {
-        const lineCoords = updatedLinePoints.map((p) => p.coordinates)
-        const tempLineFeature = { type: "LineString", coordinates: lineCoords }
-        // Also show points
-        const tempPointFeatures = updatedLinePoints.map((p) => ({
-          type: "Point",
-          coordinates: p.coordinates,
-          style: "selectedForLine",
+      // Check if stop is already selected
+      const isAlreadySelected = currentLineStops.some((stop) => stop.id === newStop.id)
+      if (isAlreadySelected) {
+        setPopupFormConfig((prev) => ({
+          ...prev,
+          message: "Esta parada ya está seleccionada para la línea.",
         }))
-        setTemporaryMapFeatures([tempLineFeature, ...tempPointFeatures])
+        return
       }
+
+      const updatedLinePoints = [...currentLinePoints, newStop]
+      const updatedLineStops = [...currentLineStops, newStop]
+
+      setCurrentLinePoints(updatedLinePoints)
+      setCurrentLineStops(updatedLineStops)
+
+      updateTemporaryFeatures(updatedLinePoints)
+
       setPopupFormConfig((prev) => ({
         ...prev,
-        message: `${updatedLinePoints.length} parada(s) seleccionada(s). Continúe o finalice.`,
+        message: `${updatedLineStops.length} parada(s) y ${updatedLinePoints.length - updatedLineStops.length} punto(s) de ruta seleccionados.`,
+      }))
+    } else if (selectedTool === "add-line" && interaction.type === "MAP_CLICK_FOR_LINE_ROUTE") {
+      // Clicked on empty space - add route point
+      const newRoutePoint = {
+        id: `route_${Date.now()}`, // Temporary ID for route points
+        coordinates: interaction.payload.coordinates,
+        type: "route", // Mark as route point
+      }
+
+      const updatedLinePoints = [...currentLinePoints, newRoutePoint]
+      setCurrentLinePoints(updatedLinePoints)
+      // Don't add to stops array since this is just a route point
+
+      updateTemporaryFeatures(updatedLinePoints)
+
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        message: `${currentLineStops.length} parada(s) y ${updatedLinePoints.length - currentLineStops.length} punto(s) de ruta seleccionados.`,
       }))
     } else if (selectedTool === "edit-line" && interaction.type === "LINE_CLICK_FOR_EDIT") {
       setPopupFormConfig({
         isVisible: true,
-        mode: "edit-line", // Specific mode for line form
-        coordinates: interaction.payload.coordinates, // Click coordinate on the line
+        mode: "edit-line",
+        coordinates: interaction.payload.coordinates,
         initialData: interaction.payload.featureData,
         message: "Editando línea existente.",
         key: Date.now(),
       })
       setTemporaryMapFeatures([])
+    } else if (selectedTool === "delete-line" && interaction.type === "LINE_CLICK_FOR_DELETE") {
+      const lineData = interaction.payload.featureData
+      const lineId = lineData.id_linea || lineData.id || lineData.gid
+      const lineName = lineData.nombre_linea || lineData.descripcion || lineData.nombre || `ID: ${lineId}`
+
+      console.log("🔍 Datos de línea para eliminar:", lineData)
+      console.log("🔍 ID extraído:", lineId)
+
+      if (!lineId) {
+        alert("Error: No se pudo obtener el ID de la línea.")
+        return
+      }
+
+      if (window.confirm(`¿Está seguro de que desea eliminar la línea "${lineName}"?`)) {
+        handleLineDelete(lineId)
+      }
+    }
+  }
+
+  const updateTemporaryFeatures = (linePoints) => {
+    if (linePoints.length > 0) {
+      const lineCoords = linePoints.map((p) => p.coordinates)
+      const tempLineFeature = { type: "LineString", coordinates: lineCoords }
+
+      const tempPointFeatures = linePoints.map((p) => ({
+        type: "Point",
+        coordinates: p.coordinates,
+        style: p.type === "stop" ? "selectedForLine" : "routePoint",
+      }))
+
+      setTemporaryMapFeatures([tempLineFeature, ...tempPointFeatures])
     }
   }
 
   const handleStopFormSubmit = async (formData) => {
-    console.log("Form submitted in Dashboard:", popupFormConfig.mode, formData)
-    // Here you would call your API service to save the data
-    // Example:
-    // if (popupFormConfig.mode === 'add') {
-    //   await stopService.create(formData);
-    // } else if (popupFormConfig.mode === 'edit') {
-    //   await stopService.update(popupFormConfig.initialData.id, formData);
-    // }
+    console.log("AdminDashboard handleStopFormSubmit called", { processing: processingRef.current })
 
-    // After successful save:
-    setTemporaryMapFeatures([]) // Clear the temporary point
-    setPopupFormConfig({
-      isVisible: false,
-      mode: null,
-      message: "Guardado exitoso!",
-      key: 0,
-      initialData: null,
-      coordinates: null,
-    })
-    setSelectedTool(null) // Deselect tool
-    // TODO: Add map data refresh logic here (e.g., tell MapView to reload sources)
+    // Prevenir procesamiento duplicado
+    if (processingRef.current) {
+      console.log("Already processing, ignoring duplicate call")
+      return
+    }
+
+    processingRef.current = true
+
+    try {
+      console.log("Processing form submission in AdminDashboard:", popupFormConfig.mode, formData)
+
+      // El StopForm ya hace la llamada HTTP, aquí solo manejamos la respuesta exitosa
+      setPopupFormConfig({
+        isVisible: false,
+        mode: null,
+        message: "Parada guardada exitosamente!",
+        key: 0,
+        initialData: null,
+        coordinates: null,
+      })
+      setSelectedTool(null)
+      setTemporaryMapFeatures([])
+
+      // Refrescar los datos del mapa
+      window.dispatchEvent(new Event("refresh-map-data"))
+    } catch (error) {
+      console.error("Error en AdminDashboard handleStopFormSubmit:", error)
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        message: "Error al guardar la parada.",
+      }))
+    } finally {
+      processingRef.current = false
+    }
   }
 
   const handleStopFormCancel = () => {
-    setTemporaryMapFeatures([]) // Clear the temporary point
+    setTemporaryMapFeatures([])
     setPopupFormConfig({
       isVisible: false,
       mode: null,
@@ -234,34 +395,81 @@ export default function AdminDashboard() {
       initialData: null,
       coordinates: null,
     })
-    // Optionally keep the tool selected if you want the user to try clicking again:
-    // setSelectedTool(null);
+    processingRef.current = false
   }
 
   const handleStopFormDelete = async (stopId) => {
     console.log("Delete requested for stop ID:", stopId)
-    // await stopService.delete(stopId);
     setPopupFormConfig({ ...popupFormConfig, isVisible: false, message: "Parada eliminada." })
     setSelectedTool(null)
     setTemporaryMapFeatures([])
     setCurrentLinePoints([])
-    // TODO: Add map data refresh logic here
+    setCurrentLineStops([])
+    window.dispatchEvent(new Event("refresh-map-data"))
+  }
+
+  const handleStopDelete = async (stopId) => {
+    try {
+      console.log("Eliminando parada con ID:", stopId)
+      const response = await axios.delete(`http://localhost:8081/api/paradas/eliminar/${stopId}`, {
+        withCredentials: true,
+      })
+
+      console.log("Respuesta de eliminación:", response)
+
+      if (response && response.status >= 200 && response.status < 300) {
+        setPopupFormConfig((prev) => ({ ...prev, message: "Parada eliminada exitosamente." }))
+        window.dispatchEvent(new Event("refresh-map-data"))
+      } else {
+        throw new Error("Respuesta del servidor no exitosa")
+      }
+    } catch (error) {
+      console.error("Error al eliminar parada:", error)
+      setPopupFormConfig((prev) => ({ ...prev, message: "Error al eliminar la parada." }))
+    }
+  }
+
+  const handleLineDelete = async (lineId) => {
+    try {
+      // Asegurar que el ID sea un número válido
+      const numericId = Number.parseInt(lineId, 10)
+
+      if (isNaN(numericId)) {
+        console.error("ID de línea inválido:", lineId)
+        setPopupFormConfig((prev) => ({ ...prev, message: "Error: ID de línea inválido." }))
+        return
+      }
+
+      console.log("🗑️ Eliminando línea con ID:", numericId)
+
+      await axios.delete(`http://localhost:8081/api/lineas/eliminar/${numericId}`, {
+        withCredentials: true,
+      })
+      setPopupFormConfig((prev) => ({ ...prev, message: "Línea eliminada exitosamente." }))
+      window.dispatchEvent(new Event("refresh-map-data"))
+    } catch (error) {
+      console.error("Error al eliminar línea:", error)
+      setPopupFormConfig((prev) => ({ ...prev, message: "Error al eliminar la línea." }))
+    }
   }
 
   const handleFinalizeLineSelection = () => {
-    if (currentLinePoints.length < 2) {
-      setPopupFormConfig((prev) => ({ ...prev, message: "Debe seleccionar al menos 2 paradas para formar una línea." }))
+    if (currentLineStops.length < 2) {
+      setPopupFormConfig((prev) => ({
+        ...prev,
+        message: "Debe seleccionar al menos 2 paradas para formar una línea.",
+      }))
       return
     }
+
     setIsFinalizingLine(true)
     setPopupFormConfig({
       isVisible: true,
-      mode: "add-line", // Specific mode for line form
-      coordinates: currentLinePoints[0].coordinates, // Position popup near the first point
+      mode: "add-line",
+      coordinates: currentLinePoints[0].coordinates,
       initialData: {
-        // Pass the selected points to the LineForm
-        // The LineForm will need to know how to handle these points (e.g., extract IDs or coordinates)
-        stops: currentLinePoints, // Array of {id, name, coordinates}
+        stops: currentLineStops, // Solo enviar las paradas, no los puntos de ruta
+        allPoints: currentLinePoints, // Todos los puntos para referencia
       },
       message: "Complete los datos de la nueva línea.",
       key: Date.now(),
@@ -270,44 +478,151 @@ export default function AdminDashboard() {
 
   const handleLineFormSubmit = async (formData) => {
     console.log("Line Form submitted:", formData)
-    // API call to save line
     setPopupFormConfig({ ...popupFormConfig, isVisible: false, message: "Línea guardada exitosamente!" })
     setSelectedTool(null)
     setTemporaryMapFeatures([])
     setCurrentLinePoints([])
+    setCurrentLineStops([])
     setIsFinalizingLine(false)
-    // TODO: Refresh line data on map
+    window.dispatchEvent(new Event("refresh-map-data"))
   }
 
   const handleLineFormCancel = () => {
     setPopupFormConfig({ ...popupFormConfig, isVisible: false, message: "Creación de línea cancelada." })
-    // Don't deselect tool, user might want to adjust points
-    setIsFinalizingLine(false) // Allow selecting more points or re-finalizing
+    setIsFinalizingLine(false)
+  }
+
+  const handleExportData = () => {
+    const exportData = async () => {
+      try {
+        const response = await fetch("http://localhost:8081/api/admin/export", {
+          method: "GET",
+          credentials: "include",
+        })
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `tsig_data_${new Date().toISOString().split("T")[0]}.json`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      } catch (error) {
+        console.error("Error al exportar datos:", error)
+      }
+    }
+    exportData()
+  }
+
+  const handleImportData = () => {
+    setShowImportDialog(true)
+  }
+
+  const handleViewStatistics = () => {
+    setShowStatistics(true)
+  }
+
+  const handleManageDatabase = () => {
+    console.log("Gestión de base de datos")
   }
 
   return (
-    <div className="flex flex-1 h-full">
-      <AdminToolsPanel
-        onToolSelect={handleToolSelect}
-        selectedTool={selectedTool}
-        instructionMessage={popupFormConfig.message}
-        onFinalizeLine={handleFinalizeLineSelection}
-        currentLinePointsCount={currentLinePoints.length}
-      />
-      <main className="flex-1 relative h-full">
+    <div className="flex h-full">
+      {/* Mapa - ocupa todo el espacio disponible */}
+      <div className="flex-1 relative h-full">
         <MapView
-          isAdmin={true}
+          isAdmin={isAdmin}
           activeTool={selectedTool}
           onMapInteractionRequest={handleMapInteraction}
-          popupFormConfig={popupFormConfig} // Pass the whole config
+          popupFormConfig={popupFormConfig}
           onStopFormSubmit={handleStopFormSubmit}
           onStopFormCancel={handleStopFormCancel}
           onStopFormDelete={handleStopFormDelete}
-          onLineFormSubmit={handleLineFormSubmit} // New prop for line form
-          onLineFormCancel={handleLineFormCancel} // New prop for line form
-          temporaryFeatures={temporaryMapFeatures} // Pass temp features to MapView
+          onLineFormSubmit={handleLineFormSubmit}
+          onLineFormCancel={handleLineFormCancel}
+          temporaryFeatures={temporaryMapFeatures}
         />
-      </main>
+      </div>
+
+      {/* Panel de herramientas de admin - Solo visible si es admin */}
+      {isAdmin && (
+        <AdminToolsPanel
+          onToolSelect={handleToolSelect}
+          selectedTool={selectedTool}
+          instructionMessage={popupFormConfig.message}
+          onFinalizeLine={handleFinalizeLineSelection}
+          currentLinePointsCount={currentLinePoints.length}
+          currentStopsCount={currentLineStops.length}
+          onExportData={handleExportData}
+          onImportData={handleImportData}
+          onViewStatistics={handleViewStatistics}
+          onManageDatabase={handleManageDatabase}
+        />
+      )}
+
+      {/* Modal de estadísticas */}
+      {showStatistics && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">Estadísticas del Sistema</h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="bg-blue-50 p-4 rounded">
+                <h4 className="font-medium text-blue-800">Total Paradas</h4>
+                <p className="text-2xl font-bold text-blue-600">--</p>
+              </div>
+              <div className="bg-green-50 p-4 rounded">
+                <h4 className="font-medium text-green-800">Total Líneas</h4>
+                <p className="text-2xl font-bold text-green-600">--</p>
+              </div>
+              <div className="bg-yellow-50 p-4 rounded">
+                <h4 className="font-medium text-yellow-800">Paradas Activas</h4>
+                <p className="text-2xl font-bold text-yellow-600">--</p>
+              </div>
+              <div className="bg-purple-50 p-4 rounded">
+                <h4 className="font-medium text-purple-800">Líneas Activas</h4>
+                <p className="text-2xl font-bold text-purple-600">--</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowStatistics(false)}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de importación */}
+      {showImportDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Importar Datos</h3>
+            <input
+              type="file"
+              accept=".json,.csv"
+              className="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowImportDialog(false)}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowImportDialog(false)
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Importar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
