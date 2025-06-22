@@ -14,6 +14,7 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
     observations: "",
     lat: "",
     lng: "",
+    ciudad: "", // Agregar campo ciudad
   })
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
@@ -28,11 +29,12 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
         route_info: initialData.ruta_km || initialData.ruta || "",
         department: initialData.departamento || "",
         direction: initialData.sentido || "",
-        enabled: initialData.activa ?? initialData.estado ?? true,
+        enabled: initialData.habilitada ?? initialData.activa ?? initialData.estado ?? true,
         has_refuge: initialData.refugio ?? false,
         observations: initialData.observaciones || "",
         lat: initialData.lat ? String(initialData.lat) : "",
         lng: initialData.lng ? String(initialData.lng) : "",
+        ciudad: initialData.ciudad || "", // Manejar el campo ciudad en edición
       })
     } else if (mode === "add" && initialData) {
       // Para agregar, usar las coordenadas UTM directamente sin transformar
@@ -47,13 +49,14 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
       setFormData({
         name: "",
         route_info: "",
-        department: "",
+        department: initialData.detectedDepartment || "", // Usar departamento detectado automáticamente
         direction: "",
         enabled: true, // Siempre habilitada por defecto al crear
         has_refuge: false,
         observations: "",
         lat: latUTM,
         lng: lngUTM,
+        ciudad: initialData.detectedCity || "", // Manejar el campo ciudad desde initialData.detectedCity
       })
     }
 
@@ -63,8 +66,15 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
 
   useEffect(() => {
     const handleUpdateCoordinates = (event) => {
-      const { lat, lng } = event.detail
-      setFormData((prev) => ({ ...prev, lat, lng }))
+      const { lat, lng, detectedDepartment, detectedCity } = event.detail
+      setFormData((prev) => ({
+        ...prev,
+        lat,
+        lng,
+        // Actualizar departamento y ciudad si se proporcionan
+        ...(detectedDepartment !== undefined && { department: detectedDepartment || "" }),
+        ...(detectedCity !== undefined && { ciudad: detectedCity || "Sin ciudad" }),
+      }))
     }
 
     const handleEndEdit = () => {
@@ -123,9 +133,9 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
     const lng = Number.parseFloat(formData.lng)
 
     // Validación para coordenadas UTM zona 21S (Uruguay)
-    if (lat < 6100000 || lat > 6250000)
+    if (lat < 2800000 || lat > 8250000)
       newErrors.lat = "La coordenada Y (latitud UTM) debe estar entre 6.100.000 y 6.250.000."
-    if (lng < 500000 || lng > 700000)
+    if (lng < 100000 || lng > 900000)
       newErrors.lng = "La coordenada X (longitud UTM) debe estar entre 500.000 y 700.000."
 
     setErrors(newErrors)
@@ -176,17 +186,21 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
         // Mapear los campos del frontend a los nombres esperados por el backend
         const dataToSubmit = {
           nombre: formData.name,
-          ruta: formData.route_info, // Cambié de ruta_km a ruta
+          ruta: formData.route_info,
           departamento: formData.department,
           sentido: formData.direction,
-          estado: formData.enabled, // Cambié de activa a estado
+          habilitada: formData.enabled,
           refugio: formData.has_refuge,
           observaciones: formData.observations,
           latitud: latUTM, // Coordenada Y en UTM
           longitud: lngUTM, // Coordenada X en UTM
+          ciudad: formData.ciudad || "Sin ciudad",
         }
 
-        console.log("📤 [StopForm] Sending data to backend:", dataToSubmit)
+        console.log("📤 [StopForm] Campo habilitada:", formData.enabled, typeof formData.enabled)
+        console.log("📤 [StopForm] Datos completos enviados al backend:", dataToSubmit)
+        console.log("📤 [StopForm] departamento:", dataToSubmit.departamento)
+        console.log("📤 [StopForm] ciudad:", dataToSubmit.ciudad)
 
         let response
         if (mode === "add") {
@@ -245,6 +259,12 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
   }
 
   const handleUpdateCoordsClick = () => {
+    // Verificar si la parada es modificable
+    if (mode === "edit" && initialData?.no_modificable === true) {
+      alert("❌ La ubicación de la parada no puede modificarse ya que es destino o partida de por lo menos una línea.")
+      return
+    }
+
     const stopId = initialData?.id_parada || initialData?.id
     const event = new CustomEvent("start-edit-stop-location", {
       detail: {
@@ -272,6 +292,12 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
   }
 
   const handleDelete = async () => {
+    // Verificar si la parada es modificable
+    if (initialData?.no_modificable === true) {
+      alert("❌ No se puede eliminar, es la partida o destino de por lo menos una línea.")
+      return
+    }
+
     if (!window.confirm("¿Está seguro de que desea eliminar esta parada?")) return
 
     setIsLoading(true)
@@ -385,7 +411,7 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
           type="button"
           onClick={handleUpdateCoordsClick}
           className="text-sm text-blue-500 hover:underline"
-          disabled={isLoading}
+          disabled={isLoading || initialData?.no_modificable === true}
         >
           Cambiar ubicación en el mapa
         </button>
@@ -404,41 +430,6 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm bg-white text-black"
           disabled={isLoading}
         />
-      </div>
-
-      <div>
-        <label htmlFor="department" className="block text-sm font-medium">
-          Departamento
-        </label>
-        <select
-          name="department"
-          id="department"
-          value={formData.department}
-          onChange={handleChange}
-          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm bg-white text-black"
-          disabled={isLoading}
-        >
-          <option value="">Seleccionar departamento</option>
-          <option value="Montevideo">Montevideo</option>
-          <option value="Canelones">Canelones</option>
-          <option value="San José">San José</option>
-          <option value="Maldonado">Maldonado</option>
-          <option value="Rocha">Rocha</option>
-          <option value="Treinta y Tres">Treinta y Tres</option>
-          <option value="Cerro Largo">Cerro Largo</option>
-          <option value="Rivera">Rivera</option>
-          <option value="Tacuarembó">Tacuarembó</option>
-          <option value="Durazno">Durazno</option>
-          <option value="Flores">Flores</option>
-          <option value="Florida">Florida</option>
-          <option value="Lavalleja">Lavalleja</option>
-          <option value="Soriano">Soriano</option>
-          <option value="Río Negro">Río Negro</option>
-          <option value="Paysandú">Paysandú</option>
-          <option value="Salto">Salto</option>
-          <option value="Artigas">Artigas</option>
-          <option value="Colonia">Colonia</option>
-        </select>
       </div>
 
       <div>
@@ -464,8 +455,38 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
         </select>
       </div>
 
+      <div>
+        <label htmlFor="ciudad" className="block text-sm font-medium">
+          Ciudad
+        </label>
+        <input
+          type="text"
+          name="ciudad"
+          id="ciudad"
+          value={formData.ciudad}
+          readOnly
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm bg-gray-100 text-black"
+          disabled={isLoading}
+        />
+      </div>
+
+      <div>
+        <label htmlFor="department" className="block text-sm font-medium">
+          Departamento
+        </label>
+        <input
+          type="text"
+          name="department"
+          id="department"
+          value={formData.department}
+          readOnly
+          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm bg-gray-100 text-black"
+          disabled={isLoading}
+        />
+      </div>
+
       <div className="flex items-center space-x-4 pt-2">
-        {/* Solo mostrar el checkbox de estado en modo edición */}
+        {/* Solo mostrar el checkbox de habilitada en modo edición */}
         {mode === "edit" && (
           <div className="flex items-center">
             <input
@@ -475,10 +496,13 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
               checked={formData.enabled}
               onChange={handleChange}
               className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-              disabled={isLoading}
+              disabled={isLoading || initialData?.no_modificable === true}
             />
             <label htmlFor="enabled" className="ml-2 block text-sm">
               Habilitada
+              {initialData?.no_modificable === true && (
+                <span className="text-xs text-orange-600 ml-1">(No modificable)</span>
+              )}
             </label>
           </div>
         )}
@@ -522,6 +546,26 @@ export default function StopForm({ mode, initialData, onSubmit, onCancel, onDele
           disabled={isLoading}
         ></textarea>
       </div>
+
+      {mode === "edit" && initialData?.no_modificable === true && (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-center">
+            <svg className="h-5 w-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="text-sm font-medium text-yellow-800">
+              Esta parada es destino o partida de por lo menos una línea
+            </span>
+          </div>
+          <p className="text-xs text-yellow-700 mt-1">
+            No se puede cambiar la ubicación, el estado ni eliminar esta parada ya que es destino o partida de líneas.
+          </p>
+        </div>
+      )}
 
       <div className="flex justify-end space-x-3 pt-3">
         <button
